@@ -22,3 +22,7 @@ Millions of packages are handled every day in contemporary logistics and e-comme
 | **Evaluation & Monitoring**     | MLflow, Evidently AI                      |
 | **Deployment Layer**            | Docker, Docker Compose, AWS EC2 / Render  |
 
+# Phase Status
+1. Conception Phase - Done
+2. Development Phase - In progress
+
