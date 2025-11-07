@@ -10,7 +10,7 @@ Millions of packages are handled every day in contemporary logistics and e-comme
 - Build and deploy a web-based platform accessible to logistics teams and warehouse operators.  
 
 # Technology Stack
-| **Component**                   | **Technologies**                  |
+| **Component**                   | **Technologies**                          |
 | ------------------------------- | ----------------------------------------- |
 | **Data Acquisition Module**     | Python, OpenCV                            |
 | **Data Storage Layer**          | AWS S3                                    |
@@ -21,4 +21,47 @@ Millions of packages are handled every day in contemporary logistics and e-comme
 | **Frontend Interface**          | Angular 17+, TypeScript, Angular Material |
 | **Evaluation & Monitoring**     | MLflow, Evidently AI                      |
 | **Deployment Layer**            | Docker, Docker Compose, AWS EC2 / Render  |
+
+# Project Risks 
+
+**Data Quality & Bias**
+
+- **Risk**: Incomplete or biased dataset may affect model accuracy.
+
+- **Mitigation**: Use diverse images, apply data augmentation, and retrain regularly.
+
+**Model Overfitting & Performance**
+
+- **Risk**: YOLOv8 might perform well in training but fail on unseen data.
+
+- **Mitigation**: Apply early stopping, monitor validation loss, and use cross-validation.
+
+**System Downtime or API Failure**
+
+- **Risk**: FastAPI or backend service interruption during high load.
+
+- **Mitigation**: Deploy with Docker, use health checks, and monitor uptime via AWS.
+
+**Data Security & Privacy**
+
+- **Risk**: Unauthorized access to stored package images or metadata.
+
+- **Mitigation**: Use HTTPS, IAM roles, encrypted PostgreSQL storage, and JWT authentication.
+
+**Scalability Challenges**
+
+- **Risk**: High image volume may cause slow response or crashes.
+
+- **Mitigation**: Implement async processing, Redis caching, and EC2 auto-scaling.
+
+**Model Drift Over Time**
+
+- **Risk**: Accuracy decreases as package types or conditions change.
+
+- **Mitigation**: Retrain model periodically and track performance using MLflow or Evidently AI.
+
+# Phase Status
+1. Conception Phase 1 - Done
+2. Development Phase 2 - Done
+3. Finalization Phase 3 - In Progress
 
