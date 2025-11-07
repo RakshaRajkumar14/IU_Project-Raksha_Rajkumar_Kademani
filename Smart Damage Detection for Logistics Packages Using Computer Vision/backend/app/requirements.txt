@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+ultralytics
+pillow
+torch
+torchvision
+captum
+asyncpg
+python-dotenv
+boto3
