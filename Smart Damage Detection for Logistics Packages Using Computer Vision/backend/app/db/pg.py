@@ -47,6 +47,13 @@ def _create_tables_sql():
       crop_s3_url TEXT,
       timestamp TIMESTAMP DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      package_id INTEGER REFERENCES packages(id) ON DELETE CASCADE,
+      author TEXT NOT NULL,
+      message TEXT NOT NULL,
+      timestamp TIMESTAMP DEFAULT now()
+    );
     """
 
 async def insert_package(tracking_code, status, severity, damage_type, confidence):
@@ -81,3 +88,25 @@ async def insert_prediction(image_id, pred_id, class_id, class_name, score, x1, 
             image_id, pred_id, class_id, class_name, score, x1, y1, x2, y2, crop_s3_url
         )
         return row['id']
+
+async def insert_message(package_id, author, message):
+    global _pool
+    if not _pool:
+        raise RuntimeError("DB pool not initialized")
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "INSERT INTO messages (package_id, author, message) VALUES ($1,$2,$3) RETURNING id, timestamp",
+            package_id, author, message
+        )
+        return {'id': row['id'], 'timestamp': row['timestamp']}
+
+async def get_messages(package_id):
+    global _pool
+    if not _pool:
+        raise RuntimeError("DB pool not initialized")
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, author, message, timestamp FROM messages WHERE package_id = $1 ORDER BY timestamp ASC",
+            package_id
+        )
+        return [dict(row) for row in rows]
