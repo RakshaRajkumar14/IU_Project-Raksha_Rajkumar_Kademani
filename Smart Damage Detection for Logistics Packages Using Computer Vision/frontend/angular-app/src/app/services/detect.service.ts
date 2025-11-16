@@ -1,32 +1,72 @@
-// frontend/src/app/services/detect.service.ts
+/**
+ * Detection Service
+ * Author: RakshaRajkumar14
+ * Date: 2025-11-16 14:37:47 UTC
+ */
+
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpEvent,HttpClientModule } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-@Injectable({ providedIn: 'root' })
+export interface Detection {
+  id: number;
+  class_name: string;
+  score: number;
+  bbox: number[];
+  severity: string;
+  color: string;
+  dimensions: string;
+  crop_url?: string;
+}
+
+export interface DetectionResponse {
+  success: boolean;
+  package_id: number;
+  tracking_code: string;
+  status: string;
+  detections: Detection[];
+  total_damages: number;
+  severity_counts: {
+    severe: number;
+    moderate: number;
+    minor: number;
+  };
+  annotated_image_url: string;
+  original_s3_url?: string;
+  annotated_s3_url?: string;
+  gradcam_url?: string;
+  gradcam_s3_url?: string;
+  shap_url?: string;
+  shap_s3_url?: string;
+  image_width: number;
+  image_height: number;
+  inference_time_ms: number;
+  timestamp: string;
+  inspector: string;
+}
+
+@Injectable({
+  providedIn: 'root'
+})
 export class DetectService {
-  private API = 'http://127.0.0.1:8000/api/detect';
-  private EXPLAIN_GRADCAM = 'http://127.0.0.1:8000/api/explain/gradcam';
+  private apiUrl = 'http://localhost:8000/api';
+
   constructor(private http: HttpClient) {}
 
-  detect(file: File, trackingCode?: string): Observable<HttpEvent<any>> {
-    const fd = new FormData();
-    fd.append('file', file);
-    if (trackingCode) fd.append('tracking_code', trackingCode);
-    return this.http.post<any>(this.API, fd, { reportProgress: true, observe: 'events' });
+  detect(file: File, trackingCode?: string): Observable<DetectionResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    if (trackingCode) {
+      formData.append('tracking_code', trackingCode);
+    }
+    
+    console.log('🔍 Uploading image for detection...');
+    
+    return this.http.post<DetectionResponse>(`${this.apiUrl}/detect`, formData);
   }
 
-  explainGradcam(file: File, targetClass?: number) {
-    const fd = new FormData();
-    fd.append('file', file);
-    if (typeof targetClass === 'number') fd.append('target_class', String(targetClass));
-    return this.http.post(this.EXPLAIN_GRADCAM, fd, { responseType: 'blob' });
-  }
-
-  explainSaliency(file: File, targetClass?: number) {
-    const fd = new FormData();
-    fd.append('file', file);
-    if (typeof targetClass === 'number') fd.append('target_class', String(targetClass));
-    return this.http.post('http://127.0.0.1:8000/api/explain/saliency', fd, { responseType: 'blob' });
+  getPackageDetails(trackingCode: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/packages/${trackingCode}`);
   }
 }

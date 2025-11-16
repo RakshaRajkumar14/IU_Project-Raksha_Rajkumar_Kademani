@@ -1,83 +1,303 @@
-# backend/app/db/pg.py
+"""
+PostgreSQL Database Operations - Enhanced Version
+Author: RakshaRajkumar14
+Date: 2025-11-16 10:59:22 UTC
+"""
+
 import os
 import asyncpg
+from typing import Optional, Dict, List
 
-_pool = None
 POSTGRES_DSN = os.getenv("POSTGRES_DSN")
 
+_pool: Optional[asyncpg.Pool] = None
+
 async def init_pool():
+    """Initialize connection pool"""
     global _pool
-    if _pool is None and POSTGRES_DSN:
-        _pool = await asyncpg.create_pool(dsn=POSTGRES_DSN, min_size=1, max_size=5)
-        # ensure tables exist
-        async with _pool.acquire() as conn:
-            await conn.execute(_create_tables_sql())
+    if _pool is None:
+        if not POSTGRES_DSN:
+            raise RuntimeError("POSTGRES_DSN not set in .env")
+        _pool = await asyncpg.create_pool(dsn=POSTGRES_DSN, min_size=1, max_size=10)
+        print(f"✅ Database pool initialized: IUProjectLocal")
+    return _pool
 
 async def close_pool():
+    """Close connection pool"""
     global _pool
     if _pool:
         await _pool.close()
         _pool = None
+        print("🔒 Database pool closed")
 
-def _create_tables_sql():
-    return """
-    CREATE TABLE IF NOT EXISTS packages (
-      id SERIAL PRIMARY KEY,
-      tracking_code TEXT,
-      status TEXT,
-      severity TEXT,
-      damage_type TEXT,
-      confidence REAL,
-      timestamp TIMESTAMP DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS images (
-      id SERIAL PRIMARY KEY,
-      package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,
-      s3_url TEXT,
-      timestamp TIMESTAMP DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS predictions (
-      id SERIAL PRIMARY KEY,
-      image_id INTEGER REFERENCES images(id) ON DELETE CASCADE,
-      pred_id TEXT,
-      class_id INTEGER,
-      class_name TEXT,
-      score REAL,
-      x1 REAL, y1 REAL, x2 REAL, y2 REAL,
-      crop_s3_url TEXT,
-      timestamp TIMESTAMP DEFAULT now()
-    );
+# ============================================================================
+# USER OPERATIONS
+# ============================================================================
+
+async def get_user_by_username(username: str):
+    """Get user by username"""
+    pool = await init_pool()
+    return await pool.fetchrow(
+        "SELECT * FROM users WHERE username = $1", 
+        username
+    )
+
+async def update_last_login(username: str):
+    """Update user's last login timestamp"""
+    pool = await init_pool()
+    await pool.execute(
+        "UPDATE users SET last_login = NOW() WHERE username = $1",
+        username
+    )
+
+# ============================================================================
+# PACKAGE OPERATIONS
+# ============================================================================
+
+async def insert_package(
+    tracking_code: str, 
+    status: str, 
+    severity: str, 
+    damage_type: str, 
+    confidence: float, 
+    inspected_at=None,
+    inspector_id: int = None,
+    notes: str = None
+):
+    """Insert package record"""
+    pool = await init_pool()
+    q = """
+    INSERT INTO packages (
+        tracking_code, status, severity, damage_type, confidence, 
+        timestamp, inspector_id, notes
+    )
+    VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7, $8)
+    RETURNING package_id;
     """
+    row = await pool.fetchrow(
+        q, tracking_code, status, severity, damage_type, confidence, 
+        inspected_at, inspector_id, notes
+    )
+    return row['package_id']
 
-async def insert_package(tracking_code, status, severity, damage_type, confidence):
-    global _pool
-    if not _pool:
-        raise RuntimeError("DB pool not initialized")
-    async with _pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO packages (tracking_code,status,severity,damage_type,confidence) VALUES ($1,$2,$3,$4,$5) RETURNING id",
-            tracking_code, status, severity, damage_type, confidence
-        )
-        return row['id']
+async def get_package_by_tracking_code(tracking_code: str):
+    """Get package by tracking code"""
+    pool = await init_pool()
+    return await pool.fetchrow(
+        "SELECT * FROM packages WHERE tracking_code = $1", 
+        tracking_code
+    )
 
-async def insert_image(package_id, s3_url):
-    global _pool
-    if not _pool:
-        raise RuntimeError("DB pool not initialized")
-    async with _pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO images (package_id, s3_url) VALUES ($1,$2) RETURNING id",
-            package_id, s3_url
-        )
-        return row['id']
+async def get_recent_packages(limit: int = 10):
+    """Get recent packages"""
+    pool = await init_pool()
+    return await pool.fetch(
+        "SELECT * FROM packages ORDER BY timestamp DESC LIMIT $1", 
+        limit
+    )
 
-async def insert_prediction(image_id, pred_id, class_id, class_name, score, x1, y1, x2, y2, crop_s3_url, extra_json=None):
-    global _pool
-    if not _pool:
-        raise RuntimeError("DB pool not initialized")
-    async with _pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO predictions (image_id,pred_id,class_id,class_name,score,x1,y1,x2,y2,crop_s3_url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id",
-            image_id, pred_id, class_id, class_name, score, x1, y1, x2, y2, crop_s3_url
-        )
-        return row['id']
+async def get_packages_today():
+    """Get today's packages count"""
+    pool = await init_pool()
+    return await pool.fetchval("""
+        SELECT COUNT(*) FROM packages 
+        WHERE DATE(timestamp) = CURRENT_DATE
+    """) or 0
+
+async def get_damaged_packages_today():
+    """Get today's damaged packages count"""
+    pool = await init_pool()
+    return await pool.fetchval("""
+        SELECT COUNT(*) FROM packages 
+        WHERE DATE(timestamp) = CURRENT_DATE AND status = 'damaged'
+    """) or 0
+
+# ============================================================================
+# IMAGE OPERATIONS
+# ============================================================================
+
+async def insert_image(
+    package_id: int, 
+    original_s3_url: str = None,
+    original_s3_key: str = None,
+    annotated_s3_url: str = None,
+    annotated_s3_key: str = None,
+    gradcam_s3_url: str = None,
+    gradcam_s3_key: str = None,
+    shap_s3_url: str = None,
+    shap_s3_key: str = None
+):
+    """Insert image record"""
+    pool = await init_pool()
+    q = """
+    INSERT INTO inspection_images (
+        package_id, 
+        original_image_url, original_s3_key,
+        annotated_image_url, annotated_s3_key,
+        gradcam_s3_url, gradcam_s3_key,
+        shap_s3_url, shap_s3_key,
+        uploaded_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+    RETURNING image_id;
+    """
+    row = await pool.fetchrow(
+        q, package_id, 
+        original_s3_url, original_s3_key,
+        annotated_s3_url, annotated_s3_key,
+        gradcam_s3_url, gradcam_s3_key,
+        shap_s3_url, shap_s3_key
+    )
+    return row['image_id']
+
+async def update_image_urls(
+    image_id: int,
+    annotated_s3_url: str = None,
+    annotated_s3_key: str = None,
+    gradcam_s3_url: str = None,
+    gradcam_s3_key: str = None,
+    shap_s3_url: str = None,
+    shap_s3_key: str = None
+):
+    """Update image with additional URLs"""
+    pool = await init_pool()
+    
+    updates = []
+    values = []
+    param_num = 1
+    
+    if annotated_s3_url:
+        updates.append(f"annotated_image_url = ${param_num}")
+        values.append(annotated_s3_url)
+        param_num += 1
+        updates.append(f"annotated_s3_key = ${param_num}")
+        values.append(annotated_s3_key)
+        param_num += 1
+    
+    if gradcam_s3_url:
+        updates.append(f"gradcam_s3_url = ${param_num}")
+        values.append(gradcam_s3_url)
+        param_num += 1
+        updates.append(f"gradcam_s3_key = ${param_num}")
+        values.append(gradcam_s3_key)
+        param_num += 1
+    
+    if shap_s3_url:
+        updates.append(f"shap_s3_url = ${param_num}")
+        values.append(shap_s3_url)
+        param_num += 1
+        updates.append(f"shap_s3_key = ${param_num}")
+        values.append(shap_s3_key)
+        param_num += 1
+    
+    if updates:
+        values.append(image_id)
+        query = f"UPDATE inspection_images SET {', '.join(updates)} WHERE image_id = ${param_num}"
+        await pool.execute(query, *values)
+
+# ============================================================================
+# PREDICTION OPERATIONS
+# ============================================================================
+
+async def insert_prediction(
+    image_id: int, 
+    pred_id: str, 
+    class_id: int, 
+    class_name: str, 
+    score: float, 
+    x1: int, y1: int, x2: int, y2: int, 
+    crop_s3_url: str = None,
+    crop_s3_key: str = None
+):
+    """Insert prediction record"""
+    pool = await init_pool()
+    q = """
+    INSERT INTO predictions (
+        image_id, pred_id, class_id, class_name, score, 
+        x1, y1, x2, y2, 
+        crop_s3_url, crop_s3_key,
+        created_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+    RETURNING id;
+    """
+    row = await pool.fetchrow(
+        q, image_id, pred_id, class_id, class_name, score,
+        x1, y1, x2, y2, crop_s3_url, crop_s3_key
+    )
+    return row['id']
+
+# ============================================================================
+# DASHBOARD STATISTICS
+# ============================================================================
+
+async def get_dashboard_stats() -> Dict:
+    """Get complete dashboard statistics"""
+    pool = await init_pool()
+    
+    # Total packages today
+    total_packages = await pool.fetchval("""
+        SELECT COUNT(*) FROM packages 
+        WHERE DATE(timestamp) = CURRENT_DATE
+    """) or 0
+    
+    # Damaged packages today
+    total_damages = await pool.fetchval("""
+        SELECT COUNT(*) FROM packages 
+        WHERE DATE(timestamp) = CURRENT_DATE AND status = 'damaged'
+    """) or 0
+    
+    # Most common damage
+    most_common = await pool.fetchrow("""
+        SELECT damage_type, COUNT(*) as count 
+        FROM packages 
+        WHERE status = 'damaged' AND damage_type != 'None'
+        GROUP BY damage_type 
+        ORDER BY count DESC 
+        LIMIT 1
+    """)
+    
+    most_common_damage = most_common['damage_type'] if most_common else 'None'
+    
+    # Damage rate
+    damage_rate = (total_damages / total_packages * 100) if total_packages > 0 else 0
+    
+    # Recent detections
+    recent = await pool.fetch("""
+        SELECT 
+            p.package_id,
+            p.tracking_code,
+            p.damage_type,
+            p.severity,
+            p.confidence,
+            p.timestamp,
+            p.status,
+            (SELECT COUNT(*) FROM predictions pr 
+             JOIN inspection_images ii ON pr.image_id = ii.image_id 
+             WHERE ii.package_id = p.package_id) as prediction_count
+        FROM packages p
+        WHERE p.status = 'damaged'
+        ORDER BY p.timestamp DESC
+        LIMIT 10
+    """)
+    
+    recent_detections = [
+        {
+            'id': r['tracking_code'],
+            'damageType': r['damage_type'],
+            'damageClass': r['severity'],
+            'timestamp': r['timestamp'].isoformat(),
+            'confidence': round(r['confidence'] * 100, 1),
+            'status': r['status'],
+            'predictionCount': r['prediction_count']
+        }
+        for r in recent
+    ]
+    
+    return {
+        'total_packages_today': total_packages,
+        'total_damages_today': total_damages,
+        'most_common_damage': most_common_damage,
+        'damage_rate': round(damage_rate, 1),
+        'recent_detections': recent_detections
+    }

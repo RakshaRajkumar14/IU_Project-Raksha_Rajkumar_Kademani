@@ -1,141 +1,692 @@
-# backend/app.py
-import os, io, time, uuid, contextlib
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+"""
+Package Damage Detection API - Complete Application
+Author: RakshaRajkumar14
+Date: 2025-11-16 11:11:12 UTC
+Database: IUProjectLocal (PostgreSQL)
+Storage: AWS S3 (damage-detection-images-s3, eu-north-1)
+
+Features:
+- YOLO-based damage detection
+- Database storage (PostgreSQL)
+- S3 image storage
+- GradCAM & SHAP explainability
+- JWT authentication
+- Real-time dashboard statistics
+"""
+
+import os
+import io
+import time
+import uuid
 from PIL import Image, ImageOps
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+import cv2
+import numpy as np
+import base64
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from typing import List, Dict
 
 # Load environment variables
-load_dotenv(".env")
+load_dotenv()
 
+# Import local modules
 from services.yolo_service import predict_pil_image, init_model
 from services import storage
+from services.explainability_services import (
+    generate_gradcam_heatmap, 
+    generate_shap_explanation,
+    generate_combined_explanation
+)
 from db import pg
+from auth import (
+    authenticate_user, 
+    create_access_token, 
+    get_current_active_user,
+    UserLogin, 
+    Token,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
-# --- NEW lifespan version ---
-from contextlib import asynccontextmanager
+# ============================================================================
+# APPLICATION LIFECYCLE
+# ============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context replaces deprecated on_event hooks."""
-    # Startup tasks
-    print("🚀 Starting up FastAPI app...")
+    """Application startup and shutdown"""
+    print("\n" + "="*80)
+    print("🚀 PACKAGE AI - STARTING UP")
+    print("="*80)
+    print(f"📅 UTC Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"👤 User: RakshaRajkumar14")
+    print(f"🗄️  Database: IUProjectLocal")
+    print(f"☁️  S3 Bucket: {os.getenv('S3_BUCKET', 'Not configured')}")
+    print(f"🌍 S3 Region: {os.getenv('AWS_REGION', 'Not configured')}")
+    print("="*80 + "\n")
+    
+    # Initialize database
     if os.getenv("POSTGRES_DSN"):
         await pg.init_pool()
+        print("✅ Database connected: IUProjectLocal")
+    else:
+        print("⚠️  POSTGRES_DSN not set")
+    
+    # Initialize YOLO model
     init_model()
+    print(f"✅ YOLO model loaded: {os.getenv('YOLO_WEIGHTS', 'models/best.pt')}")
+    
+    # Check S3
+    if os.getenv("S3_BUCKET"):
+        print(f"✅ S3 configured: {os.getenv('S3_BUCKET')}")
+    else:
+        print("⚠️  S3 not configured")
+    
+    print("\n✨ Application ready!\n")
+    
     yield
-    # Shutdown tasks
-    print("🧹 Shutting down FastAPI app...")
+    
+    # Shutdown
+    print("\n🧹 Shutting down...")
     if os.getenv("POSTGRES_DSN"):
         await pg.close_pool()
+    print("👋 Goodbye!\n")
 
-# Create app with lifespan
-app = FastAPI(title="Package Damage Detection API", lifespan=lifespan)
+# ============================================================================
+# FASTAPI APPLICATION
+# ============================================================================
 
-# Allow frontend dev server (Angular) to call backend
+app = FastAPI(
+    title="Package Damage Detection API",
+    description="AI-powered package damage detection with YOLO, GradCAM, and SHAP",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # restrict to localhost:4200 in prod
+    allow_origins=["*"],  # In production: ["http://localhost:4200"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
 def pil_from_bytes(b: bytes):
+    """Convert bytes to PIL Image"""
     img = Image.open(io.BytesIO(b))
     return ImageOps.exif_transpose(img).convert("RGB")
-@app.get("/api/detect")
-async def detect_get_info():
-    return {
-        "message": "This endpoint accepts POST multipart/form-data with key 'file'. Use POST to upload an image. Example: curl -F \"file=@/path/to/img.jpg\" http://127.0.0.1:8000/api/detect"
-    }
-@app.post("/api/detect")
-async def detect(file: UploadFile = File(...), tracking_code: str = None):
-    """Accept an uploaded image, run YOLO detection, store metadata."""
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
 
+def image_to_base64(image_array):
+    """Convert numpy array to base64 data URL"""
+    _, buffer = cv2.imencode('.jpg', image_array, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    img_str = base64.b64encode(buffer).decode()
+    return f"data:image/jpeg;base64,{img_str}"
+
+def get_severity_and_color(confidence: float):
+    """Determine severity based on confidence"""
+    if confidence >= 0.85:
+        return 'danger', '#ff4d6d', (77, 77, 255)  # BGR
+    elif confidence >= 0.60:
+        return 'warning', '#ffa500', (0, 165, 255)
+    else:
+        return 'secondary', '#00ff88', (136, 255, 0)
+
+def calculate_iou(bbox1, bbox2):
+    """Calculate Intersection over Union"""
+    x1_min, y1_min, x1_max, y1_max = bbox1
+    x2_min, y2_min, x2_max, y2_max = bbox2
+    
+    inter_x_min = max(x1_min, x2_min)
+    inter_y_min = max(y1_min, y2_min)
+    inter_x_max = min(x1_max, x2_max)
+    inter_y_max = min(y1_max, y2_max)
+    
+    if inter_x_max < inter_x_min or inter_y_max < inter_y_min:
+        return 0.0
+    
+    inter_area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
+    bbox1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    bbox2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    union_area = bbox1_area + bbox2_area - inter_area
+    
+    return inter_area / union_area if union_area > 0 else 0.0
+
+def group_overlapping_detections(predictions, iou_threshold=0.5):
+    """Group overlapping detections for multi-label"""
+    if len(predictions) == 0:
+        return []
+    
+    groups = []
+    used = set()
+    
+    for i, pred1 in enumerate(predictions):
+        if i in used:
+            continue
+        
+        group = [pred1]
+        bbox1 = pred1['bbox']
+        
+        for j, pred2 in enumerate(predictions):
+            if i >= j or j in used:
+                continue
+            
+            bbox2 = pred2['bbox']
+            iou = calculate_iou(bbox1, bbox2)
+            
+            if iou > iou_threshold:
+                group.append(pred2)
+                used.add(j)
+        
+        groups.append(group)
+        used.add(i)
+    
+    return groups
+
+def draw_detections_on_image(img_array, predictions):
+    """Draw bounding boxes with multi-label support"""
+    annotated = img_array.copy()
+    grouped_preds = group_overlapping_detections(predictions)
+    
+    for group in grouped_preds:
+        if len(group) == 0:
+            continue
+        
+        bbox = group[0]['bbox']
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        
+        max_conf = max(p['score'] for p in group)
+        severity, hex_color, bgr_color = get_severity_and_color(max_conf)
+        
+        # Draw rectangle
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), bgr_color, 3)
+        
+        # Create label
+        if len(group) == 1:
+            label = f"{group[0]['class_name']} {group[0]['score']*100:.1f}%"
+        else:
+            damage_names = [p['class_name'] for p in group]
+            avg_conf = sum(p['score'] for p in group) / len(group)
+            label = f"{' & '.join(damage_names)} {avg_conf*100:.1f}%"
+        
+        # Draw label background and text
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        (text_width, text_height), _ = cv2.getTextSize(label, font, 0.6, 2)
+        
+        label_y = y1 - 10 if y1 - 10 > text_height else y1 + text_height + 10
+        
+        cv2.rectangle(annotated, 
+                     (x1, label_y - text_height - 8), 
+                     (x1 + text_width + 10, label_y + 5), 
+                     bgr_color, -1)
+        
+        cv2.putText(annotated, label, (x1 + 5, label_y), 
+                   font, 0.6, (255, 255, 255), 2)
+    
+    return annotated
+
+# ============================================================================
+# AUTHENTICATION ENDPOINTS
+# ============================================================================
+
+@app.post("/api/auth/login", response_model=Token)
+async def login(user_data: UserLogin):
+    """
+    Admin login endpoint
+    
+    Default credentials:
+    - Username: admin
+    - Password: admin123
+    """
+    print(f"\n🔐 Login attempt: {user_data.username}")
+    
+    user = await authenticate_user(user_data.username, user_data.password)
+    
+    if not user:
+        print(f"❌ Login failed: Invalid credentials")
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password"
+        )
+    
+    # Update last login
+    await pg.update_last_login(user_data.username)
+    
+    # Create access token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user['username']},
+        expires_delta=access_token_expires
+    )
+    
+    print(f"✅ Login successful: {user_data.username}")
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "username": user['username'],
+            "full_name": user['full_name'],
+            "email": user['email'],
+            "role": user['role']
+        }
+    }
+
+@app.get("/api/auth/me")
+async def get_current_user_info(current_user: dict = Depends(get_current_active_user)):
+    """Get current authenticated user info"""
+    return {
+        "username": current_user['username'],
+        "full_name": current_user['full_name'],
+        "email": current_user['email'],
+        "role": current_user['role'],
+        "last_login": current_user['last_login'].isoformat() if current_user['last_login'] else None
+    }
+
+# ============================================================================
+# DETECTION ENDPOINT
+# ============================================================================
+
+@app.post("/api/detect")
+async def detect(
+    file: UploadFile = File(...), 
+    tracking_code: str = None,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """
+    Complete damage detection with explainability
+    
+    Process:
+    1. Upload original image to S3
+    2. Run YOLO detection
+    3. Save package to PostgreSQL
+    4. Save image record with S3 URLs
+    5. Upload crops to S3
+    6. Save predictions to PostgreSQL
+    7. Generate annotated image → S3
+    8. Generate GradCAM → S3
+    9. Generate SHAP → S3
+    10. Return all results
+    """
+    
+    print("\n" + "="*80)
+    print("🔍 NEW DETECTION REQUEST")
+    print("="*80)
+    print(f"📅 UTC Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"👤 User: {current_user['username']}")
+    print(f"📁 File: {file.filename}")
+    print("="*80 + "\n")
+    
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Read image
     content = await file.read()
     img = pil_from_bytes(content)
+    img_array = np.array(img)
     w, h = img.size
     t0 = time.time()
 
-    preds = predict_pil_image(img, imgsz=int(os.getenv("IMG_SZ", 640)), conf=float(os.getenv("CONF_THRESH", 0.25)))
+    # Generate tracking code
+    if not tracking_code:
+        date_str = datetime.utcnow().strftime('%Y%m%d')
+        unique_id = str(uuid.uuid4())[:8].upper()
+        tracking_code = f"PKG-{date_str}-{unique_id}"
+    
+    print(f"📦 Tracking Code: {tracking_code}")
 
-    # optional upload to S3
+    # STEP 1: Upload original to S3
     orig_s3_url = None
-    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("S3_BUCKET"):
-        key = f"{uuid.uuid4()}/original_{file.filename}"
+    orig_s3_key = None
+    
+    if os.getenv("S3_BUCKET"):
         try:
-            orig_s3_url = storage.upload_bytes_to_s3(key, content, content_type=file.content_type)
+            orig_s3_key = storage.generate_s3_key('originals', tracking_code, file.filename)
+            orig_s3_url = storage.upload_bytes_to_s3(orig_s3_key, content, file.content_type)
+            print(f"☁️  Original uploaded to S3: {orig_s3_key}")
         except Exception as e:
-            print("S3 upload failed:", e)
+            print(f"⚠️  S3 upload failed: {e}")
 
+    # STEP 2: Run YOLO detection
+    print("\n🤖 Running YOLO detection...")
+    preds = predict_pil_image(
+        img, 
+        imgsz=int(os.getenv("IMG_SZ", 640)), 
+        conf=float(os.getenv("CONF_THRESH", 0.25))
+    )
+    print(f"✅ Found {len(preds)} detections")
+
+    # Determine status
+    package_status = "passed"
+    primary_severity = "secondary"
+    primary_damage_type = "None"
+    max_confidence = 0.0
+    
+    if len(preds) > 0:
+        top_pred = max(preds, key=lambda p: p['score'])
+        max_confidence = top_pred['score']
+        primary_damage_type = top_pred['class_name']
+        
+        if max_confidence >= 0.4:
+            package_status = "damaged"
+        
+        primary_severity, _, _ = get_severity_and_color(max_confidence)
+
+    all_damage_types = list(set(p['class_name'] for p in preds)) if preds else ["None"]
+    damage_type_str = ", ".join(all_damage_types)
+
+    print(f"\n📊 Analysis:")
+    print(f"   Status: {package_status}")
+    print(f"   Severity: {primary_severity}")
+    print(f"   Damages: {damage_type_str}")
+    print(f"   Confidence: {max_confidence*100:.1f}%")
+
+    # STEP 3 & 4: Save to database
     package_id = None
-    if os.getenv("POSTGRES_DSN"):
-        if len(preds) == 0:
-            status, severity, damage_type, confidence = "passed", "success", "None", 1.0
-        else:
-            top = max(preds, key=lambda p: p['score'])
-            damage_type = top['class_name']
-            confidence = float(top['score'])
-            status = "damaged" if confidence >= 0.4 else "passed"
-            severity = "danger" if confidence > 0.85 else ("warning" if confidence > 0.6 else "secondary")
-        try:
-            tracking_code_val = tracking_code or f"PKG-{str(uuid.uuid4())[:8].upper()}"
-            package_id = await pg.insert_package(tracking_code_val, status, severity, damage_type, confidence)
-        except Exception as e:
-            print("DB insert package error:", e)
-
     image_id = None
+    
     if os.getenv("POSTGRES_DSN"):
         try:
-            image_id = await pg.insert_image(package_id, orig_s3_url)
+            print("\n💾 Saving to database...")
+            
+            package_id = await pg.insert_package(
+                tracking_code, 
+                package_status, 
+                primary_severity, 
+                damage_type_str,
+                max_confidence,
+                datetime.utcnow(),
+                None,  # inspector_id
+                f"Detected by {current_user['username']}"
+            )
+            print(f"✅ Package saved (ID: {package_id})")
+            
+            # Save image (we'll update with other URLs later)
+            image_id = await pg.insert_image(
+                package_id, 
+                orig_s3_url,
+                orig_s3_key
+            )
+            print(f"✅ Image saved (ID: {image_id})")
+            
         except Exception as e:
-            print("DB insert image error:", e)
+            print(f"❌ Database error: {e}")
 
-    out_preds = []
+    # STEP 5: Process predictions and upload crops
+    boxes_for_explainability = []
+    processed_preds = []
+    
+    print("\n🎯 Processing predictions...")
+    
     for i, p in enumerate(preds):
-        x1, y1, x2, y2 = p['bbox']
-        crop = img.crop((x1, y1, x2, y2)).convert("RGB")
-        buf = io.BytesIO()
-        crop.save(buf, format="JPEG", quality=90)
-        crop_bytes = buf.getvalue()
-
+        x1, y1, x2, y2 = [int(v) for v in p['bbox']]
+        score = p['score']
+        class_name = p['class_name']
+        class_id = p.get('class_id', 0)
+        
+        severity, hex_color, bgr_color = get_severity_and_color(score)
+        boxes_for_explainability.append([x1, y1, x2, y2, score])
+        
+        # Upload crop to S3
         crop_s3_url = None
-        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("S3_BUCKET"):
-            key = f"{uuid.uuid4()}/pred_{i}_crop.jpg"
+        crop_s3_key = None
+        
+        if os.getenv("S3_BUCKET"):
             try:
-                crop_s3_url = storage.upload_bytes_to_s3(key, crop_bytes, content_type="image/jpeg")
+                crop_img = img_array[y1:y2, x1:x2]
+                _, crop_buffer = cv2.imencode('.jpg', crop_img)
+                
+                crop_filename = f"{class_name}_{i+1}.jpg"
+                crop_s3_key = storage.generate_s3_key('crops', tracking_code, crop_filename)
+                crop_s3_url = storage.upload_bytes_to_s3(
+                    crop_s3_key, 
+                    crop_buffer.tobytes(), 
+                    "image/jpeg"
+                )
+                print(f"   ☁️  Crop {i+1}: {class_name}")
             except Exception as e:
-                print("S3 crop upload failed:", e)
+                print(f"   ⚠️  Crop upload failed: {e}")
 
-        pred_db_id = None
+        # Save prediction to database
         if os.getenv("POSTGRES_DSN") and image_id:
             try:
-                pred_db_id = await pg.insert_prediction(
-                    image_id, p['id'], p['class_id'], p['class_name'],
-                    float(p['score']), x1, y1, x2, y2, crop_s3_url, None
+                pred_id = f"PRED-{tracking_code}-{i+1:03d}"
+                await pg.insert_prediction(
+                    image_id, pred_id, class_id, class_name, score,
+                    x1, y1, x2, y2, 
+                    crop_s3_url, crop_s3_key
                 )
+                print(f"   ✅ Prediction {i+1}: {class_name} ({score*100:.1f}%)")
             except Exception as e:
-                print("DB insert prediction error:", e)
-
-        out_preds.append({
-            "id": p['id'],
-            "class_id": p['class_id'],
-            "class_name": p['class_name'],
-            "score": p['score'],
-            "bbox": p['bbox'],
-            "crop_url": crop_s3_url,
-            "db_id": pred_db_id
+                print(f"   ❌ Save failed: {e}")
+        
+        processed_preds.append({
+            'id': i + 1,
+            'class_name': class_name,
+            'score': score,
+            'bbox': [x1, y1, x2, y2],
+            'severity': severity,
+            'color': hex_color,
+            'dimensions': f"{x2-x1}x{y2-y1}px",
+            'crop_url': crop_s3_url
         })
 
-    elapsed = time.time() - t0
-    return JSONResponse({
-        "package_id": package_id,
-        "image_width": w,
-        "image_height": h,
-        "predictions": out_preds,
-        "elapsed": elapsed
-    })
+    # STEP 6: Generate annotated image
+    print("\n🎨 Generating visualizations...")
+    annotated = draw_detections_on_image(img_array, processed_preds)
+    annotated_base64 = image_to_base64(annotated)
+
+    # Upload annotated to S3
+    annotated_s3_url = None
+    annotated_s3_key = None
+    
+    if os.getenv("S3_BUCKET"):
+        try:
+            _, ann_buffer = cv2.imencode('.jpg', annotated)
+            annotated_s3_key = storage.generate_s3_key('annotated', tracking_code, 'annotated.jpg')
+            annotated_s3_url = storage.upload_bytes_to_s3(
+                annotated_s3_key, 
+                ann_buffer.tobytes(), 
+                "image/jpeg"
+            )
+            print(f"☁️  Annotated uploaded")
+        except Exception as e:
+            print(f"⚠️  Annotated upload failed: {e}")
+
+    # STEP 7 & 8: Generate explainability (GradCAM + SHAP)
+    gradcam_url = None
+    gradcam_s3_url = None
+    gradcam_s3_key = None
+    shap_url = None
+    shap_s3_url = None
+    shap_s3_key = None
+    
+    if len(boxes_for_explainability) > 0:
+        try:
+            print("🧠 Generating explainability AI...")
+            
+            # Generate GradCAM
+            gradcam_img = generate_gradcam_heatmap(img_array, np.array(boxes_for_explainability))
+            gradcam_url = image_to_base64(gradcam_img)
+            
+            # Upload GradCAM to S3
+            if os.getenv("S3_BUCKET"):
+                _, grad_buffer = cv2.imencode('.jpg', gradcam_img)
+                gradcam_s3_key = storage.generate_s3_key('gradcam', tracking_code, 'gradcam.jpg')
+                gradcam_s3_url = storage.upload_bytes_to_s3(
+                    gradcam_s3_key, 
+                    grad_buffer.tobytes(), 
+                    "image/jpeg"
+                )
+                print("☁️  GradCAM uploaded")
+            
+            # Generate SHAP
+            shap_img = generate_shap_explanation(img_array, np.array(boxes_for_explainability))
+            shap_url = image_to_base64(shap_img)
+            
+            # Upload SHAP to S3
+            if os.getenv("S3_BUCKET"):
+                _, shap_buffer = cv2.imencode('.jpg', shap_img)
+                shap_s3_key = storage.generate_s3_key('shap', tracking_code, 'shap.jpg')
+                shap_s3_url = storage.upload_bytes_to_s3(
+                    shap_s3_key, 
+                    shap_buffer.tobytes(), 
+                    "image/jpeg"
+                )
+                print("☁️  SHAP uploaded")
+            
+            print("✅ Explainability AI complete")
+            
+        except Exception as e:
+            print(f"⚠️  Explainability error: {e}")
+
+    # Update database with all URLs
+    if image_id:
+        try:
+            await pg.update_image_urls(
+                image_id,
+                annotated_s3_url, annotated_s3_key,
+                gradcam_s3_url, gradcam_s3_key,
+                shap_s3_url, shap_s3_key
+            )
+            print("✅ Database updated with all URLs")
+        except Exception as e:
+            print(f"⚠️  URL update failed: {e}")
+
+    inference_time = int((time.time() - t0) * 1000)
+
+    # Severity counts
+    severity_counts = {
+        'severe': sum(1 for p in processed_preds if p['severity'] == 'danger'),
+        'moderate': sum(1 for p in processed_preds if p['severity'] == 'warning'),
+        'minor': sum(1 for p in processed_preds if p['severity'] == 'secondary')
+    }
+
+    print(f"\n⏱️  Total time: {inference_time}ms")
+    print("="*80 + "\n")
+
+    return {
+        'success': True,
+        'package_id': package_id,
+        'tracking_code': tracking_code,
+        'status': package_status,
+        'detections': processed_preds,
+        'total_damages': len(processed_preds),
+        'severity_counts': severity_counts,
+        'annotated_image_url': annotated_base64,
+        'original_s3_url': orig_s3_url,
+        'annotated_s3_url': annotated_s3_url,
+        'gradcam_url': gradcam_url,
+        'gradcam_s3_url': gradcam_s3_url,
+        'shap_url': shap_url,
+        'shap_s3_url': shap_s3_url,
+        'image_width': w,
+        'image_height': h,
+        'inference_time_ms': inference_time,
+        'timestamp': datetime.utcnow().isoformat(),
+        'inspector': current_user['username']
+    }
+
+# ============================================================================
+# DASHBOARD ENDPOINTS
+# ============================================================================
+
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats(current_user: dict = Depends(get_current_active_user)):
+    """Get dashboard statistics from database"""
+    
+    if not os.getenv("POSTGRES_DSN"):
+        return {
+            'total_packages_today': 0,
+            'total_damages_today': 0,
+            'most_common_damage': 'None',
+            'damage_rate': 0,
+            'recent_detections': []
+        }
+    
+    try:
+        stats = await pg.get_dashboard_stats()
+        return stats
+        
+    except Exception as e:
+        print(f"❌ Dashboard stats error: {e}")
+        return {
+            'total_packages_today': 0,
+            'total_damages_today': 0,
+            'most_common_damage': 'None',
+            'damage_rate': 0,
+            'recent_detections': []
+        }
+
+@app.get("/api/packages/{tracking_code}")
+async def get_package(
+    tracking_code: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Get package details by tracking code"""
+    
+    if not os.getenv("POSTGRES_DSN"):
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    try:
+        package = await pg.get_package_by_tracking_code(tracking_code)
+        
+        if not package:
+            raise HTTPException(status_code=404, detail="Package not found")
+        
+        pool = await pg.init_pool()
+        
+        images = await pool.fetch("""
+            SELECT * FROM inspection_images WHERE package_id = $1
+        """, package['package_id'])
+        
+        predictions = []
+        for img in images:
+            preds = await pool.fetch("""
+                SELECT * FROM predictions WHERE image_id = $1
+            """, img['image_id'])
+            predictions.extend([dict(p) for p in preds])
+        
+        return {
+            'package': dict(package),
+            'images': [dict(img) for img in images],
+            'predictions': predictions
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/health")
+def health_check():
+    """Health check endpoint"""
+    return {
+        'status': 'healthy',
+        'timestamp': datetime.utcnow().isoformat(),
+        'database': 'connected' if os.getenv("POSTGRES_DSN") else 'not configured',
+        's3': 'configured' if os.getenv("S3_BUCKET") else 'not configured',
+        'model': 'loaded',
+        'user': 'RakshaRajkumar14',
+        'database_name': 'IUProjectLocal',
+        's3_bucket': os.getenv("S3_BUCKET", "not configured"),
+        's3_region': os.getenv("AWS_REGION", "not configured"),
+        'features': [
+            'YOLO Detection',
+            'GradCAM Explainability',
+            'SHAP Analysis',
+            'JWT Authentication',
+            'PostgreSQL Storage',
+            'AWS S3 Storage'
+        ]
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

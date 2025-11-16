@@ -9,7 +9,7 @@
             "name": "IUProjectLocal",
             "database": "postgres",
             "username": "postgres",
-            "password": "Raksha*14",
+            "password": "raksha*14",
             "connectionTimeout": 30
         }
     ]
