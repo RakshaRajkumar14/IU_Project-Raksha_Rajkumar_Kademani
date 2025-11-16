@@ -1,61 +1,114 @@
 import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
-import { TopBarComponent } from './components/topbar/topbar.component';
-import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, SidebarComponent, TopBarComponent],
+  imports: [CommonModule, RouterOutlet, SidebarComponent],
   template: `
     <div class="app-container">
-      <app-sidebar [isOpen]="sidebarOpen" (closeMenu)="closeSidebar()"></app-sidebar>
-      <div class="main-content">
-        <app-top-bar (menuClick)="toggleSidebar()"></app-top-bar>
-        <main class="content">
-          <router-outlet></router-outlet>
-        </main>
-      </div>
+      <!-- Mobile Menu Button (Hamburger) -->
+      <button class="mobile-menu-btn" (click)="openMobileSidebar()" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+
+      <app-sidebar 
+        [isCollapsed]="isSidebarCollapsed"
+        [isMobileOpen]="isMobileSidebarOpen"
+        (toggleCollapse)="onToggleSidebar($event)"
+        (closeMobile)="closeMobileSidebar()">
+      </app-sidebar>
+      
+      <main class="main-content" [class.expanded]="isSidebarCollapsed">
+        <router-outlet></router-outlet>
+      </main>
     </div>
   `,
   styles: [`
     .app-container {
       display: flex;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 100vh;
+      background: #f8f9fa;
+      position: relative;
+    }
+
+    .mobile-menu-btn {
+      display: none;
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      z-index: 998;
+      width: 48px;
+      height: 48px;
+      border: none;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      color: #667eea;
+      transition: all 0.3s ease;
+    }
+
+    .mobile-menu-btn:hover {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      transform: scale(1.05);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+    }
+
+    .mobile-menu-btn:active {
+      transform: scale(0.95);
     }
 
     .main-content {
       flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      outline: 2px dashed red;
+      margin-left: 260px;
+      position: relative;
+      overflow-x: hidden;
+      transition: margin-left 0.3s ease;
     }
 
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 2rem;
-      background: var(--gray-50);
+    .main-content.expanded {
+      margin-left: 85px;
     }
 
     @media (max-width: 768px) {
-      .content {
-        padding: 1rem;
+      .mobile-menu-btn {
+        display: flex;
+      }
+
+      .main-content {
+        margin-left: 0;
+      }
+
+      .main-content.expanded {
+        margin-left: 0;
       }
     }
   `]
 })
 export class AppComponent {
-  title = 'PackageAI - Smart Damage Detection';
+  title = 'damage-detect-ai';
+  isSidebarCollapsed = false;
+  isMobileSidebarOpen = false;
 
-  // Add the boolean used in the template
-  sidebarOpen: boolean = false;
+  onToggleSidebar(collapsed: boolean) {
+    this.isSidebarCollapsed = collapsed;
+  }
 
-  // Methods called from the template (safer & easier to unit test)
-  openSidebar() { this.sidebarOpen = true; }
-  closeSidebar() { this.sidebarOpen = false; }
-  toggleSidebar() { this.sidebarOpen = !this.sidebarOpen; }
+  openMobileSidebar() {
+    this.isMobileSidebarOpen = true;
+  }
+
+  closeMobileSidebar() {
+    this.isMobileSidebarOpen = false;
+  }
 }

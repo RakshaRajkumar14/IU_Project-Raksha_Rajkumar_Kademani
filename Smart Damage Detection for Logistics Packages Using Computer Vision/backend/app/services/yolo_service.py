@@ -1,47 +1,65 @@
 # backend/app/services/yolo_service.py
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 from PIL import Image
+from ultralytics import YOLO
 
-YOLO_WEIGHTS = os.getenv("YOLO_WEIGHTS", "models/best.pt")  # safe default (relative to backend/app)
-_detector = None
+YOLO_WEIGHTS = os.getenv("YOLO_WEIGHTS", "models/best.pt")
+detector = None
 
 def init_model():
-    """Call this in FastAPI startup. Loads YOLO model once."""
-    global _detector
-    if _detector is None:
-        try:
-            from ultralytics import YOLO
-        except Exception as e:
-            raise RuntimeError(f"Failed to import ultralytics: {e}") from e
-        # print path for debugging
-        print(f"Initializing YOLO model from: {YOLO_WEIGHTS}")
-        _detector = YOLO(YOLO_WEIGHTS)
-    return _detector
+    global detector
+    if detector is not None:
+        return
+    try:
+        print("Loading YOLO model from:", YOLO_WEIGHTS)
+        detector = YOLO(YOLO_WEIGHTS)
+        print("YOLO loaded. classes:", getattr(detector.model, "names", None))
+    except Exception as e:
+        print("Failed to load YOLO model:", e)
+        detector = None
 
-def get_detector():
-    if _detector is None:
-        raise RuntimeError("YOLO model not initialized. Call init_model() in FastAPI startup.")
-    return _detector
+def predict_pil_image(img: Image.Image, imgsz: int = 640, conf: float = 0.25) -> List[Dict]:
+    """
+    Returns a list of dicts:
+      { id, class_id, class_name, score, bbox: [x1,y1,x2,y2] }
+    """
+    global detector
+    if detector is None:
+        # no model loaded
+        print("predict called but detector is None")
+        return []
 
-def predict_pil_image(img: Image.Image, imgsz: int = 640, conf: float = 0.25) -> List[Dict[str, Any]]:
-    """Run inference on a PIL image. Returns list of predictions."""
-    det = get_detector()
-    results = det.predict(img, imgsz=imgsz, conf=conf, verbose=False)
-    r = results[0]
-    preds = []
-    for i, box in enumerate(r.boxes):
-        xyxy = box.xyxy[0].tolist()
-        x1, y1, x2, y2 = map(int, xyxy)
-        score = float(box.conf[0])
-        class_id = int(box.cls[0])
-        # obtain class name if available
-        class_name = det.model.names[class_id] if hasattr(det, "model") else str(class_id)
-        preds.append({
-            "id": f"p{i}",
-            "bbox": [x1, y1, x2, y2],
-            "score": score,
-            "class_id": class_id,
-            "class_name": class_name
-        })
-    return preds
+    # ultralytics returns a Results object or list of Results
+    results = detector.predict(img, imgsz=imgsz, conf=conf, device='cpu')  # use cpu unless gpu available
+
+    out = []
+    for r in results:
+        boxes = getattr(r, "boxes", None)
+        if boxes is None:
+            continue
+        for i, b in enumerate(boxes):
+            # extract xyxy, conf, cls robustly
+            try:
+                xyxy = b.xyxy.tolist()[0] if hasattr(b.xyxy, "tolist") else [float(x) for x in b.xyxy]
+            except Exception:
+                # fallback if xyxy is a tensor or list
+                xyxy = [float(x) for x in getattr(b, "xyxy", [0,0,0,0])]
+            try:
+                score = float(b.conf.tolist()[0]) if hasattr(b.conf, "tolist") else float(b.conf)
+            except Exception:
+                score = float(getattr(b, "conf", 0.0))
+            try:
+                cls_id = int(b.cls.tolist()[0]) if hasattr(b.cls, "tolist") else int(b.cls)
+            except Exception:
+                cls_id = int(getattr(b, "cls", 0))
+            class_name = detector.model.names[cls_id] if getattr(detector, "model", None) and hasattr(detector.model, "names") and cls_id in detector.model.names else str(cls_id)
+            out.append({
+                "id": f"{i}",
+                "class_id": cls_id,
+                "class_name": class_name,
+                "score": score,
+                "bbox": [xyxy[0], xyxy[1], xyxy[2], xyxy[3]],
+            })
+    print(f"predict_pil_image -> found {len(out)} preds")
+    return out

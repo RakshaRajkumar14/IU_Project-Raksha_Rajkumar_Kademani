@@ -45,7 +45,11 @@ app.add_middleware(
 def pil_from_bytes(b: bytes):
     img = Image.open(io.BytesIO(b))
     return ImageOps.exif_transpose(img).convert("RGB")
-
+@app.get("/api/detect")
+async def detect_get_info():
+    return {
+        "message": "This endpoint accepts POST multipart/form-data with key 'file'. Use POST to upload an image. Example: curl -F \"file=@/path/to/img.jpg\" http://127.0.0.1:8000/api/detect"
+    }
 @app.post("/api/detect")
 async def detect(file: UploadFile = File(...), tracking_code: str = None):
     """Accept an uploaded image, run YOLO detection, store metadata."""
