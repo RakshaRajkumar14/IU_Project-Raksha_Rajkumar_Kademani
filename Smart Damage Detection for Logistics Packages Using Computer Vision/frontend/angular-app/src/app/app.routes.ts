@@ -10,6 +10,10 @@ export const routes: Routes = [
     path: 'dashboard',
     loadComponent: () => import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
+    {
+    path: 'upload',
+    loadComponent: () => import('./pages/upload/upload.component').then(m => m.UploadComponent)
+  },
   {
     path: 'queue',
     loadComponent: () => import('./pages/inspection/inspection.component').then(m => m.InspectionQueueComponent)
