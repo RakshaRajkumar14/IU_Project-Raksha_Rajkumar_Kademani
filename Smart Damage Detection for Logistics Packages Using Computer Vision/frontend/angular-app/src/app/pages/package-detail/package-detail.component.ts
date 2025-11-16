@@ -1,11 +1,12 @@
  import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
+import { PackageChatComponent } from '../../components/package-chat/package-chat.component';
 
 @Component({
   selector: 'app-package-detail',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, PackageChatComponent],
   template: `
     <div class="detail-page">
       <div class="header-actions">
@@ -92,6 +93,8 @@ import { ActivatedRoute, Router } from '@angular/router';
               </div>
             </div>
           </div>
+
+          <app-package-chat [packageId]="getPackageIdAsNumber()"></app-package-chat>
         </div>
       </div>
     </div>
@@ -253,6 +256,10 @@ export class PackageDetailComponent implements OnInit {
 
   ngOnInit(): void {
     this.packageId = this.route.snapshot.paramMap.get('id') || '';
+  }
+
+  getPackageIdAsNumber(): number {
+    return parseInt(this.packageId, 10) || 0;
   }
 
   goBack(): void {

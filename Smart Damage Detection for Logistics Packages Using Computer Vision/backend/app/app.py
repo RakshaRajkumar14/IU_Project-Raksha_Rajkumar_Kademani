@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv(".env")
@@ -45,6 +46,12 @@ app.add_middleware(
 def pil_from_bytes(b: bytes):
     img = Image.open(io.BytesIO(b))
     return ImageOps.exif_transpose(img).convert("RGB")
+
+# Pydantic models for request bodies
+class MessageCreate(BaseModel):
+    author: str
+    message: str
+
 @app.get("/api/detect")
 async def detect_get_info():
     return {
@@ -139,3 +146,39 @@ async def detect(file: UploadFile = File(...), tracking_code: str = None):
         "predictions": out_preds,
         "elapsed": elapsed
     })
+
+@app.post("/api/packages/{package_id}/messages")
+async def add_message(package_id: int, message_data: MessageCreate):
+    """Add a message/comment to a package."""
+    if not os.getenv("POSTGRES_DSN"):
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    try:
+        result = await pg.insert_message(package_id, message_data.author, message_data.message)
+        return JSONResponse({
+            "id": result['id'],
+            "package_id": package_id,
+            "author": message_data.author,
+            "message": message_data.message,
+            "timestamp": result['timestamp'].isoformat()
+        })
+    except Exception as e:
+        print("Error adding message:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/packages/{package_id}/messages")
+async def get_messages(package_id: int):
+    """Get all messages/comments for a package."""
+    if not os.getenv("POSTGRES_DSN"):
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    try:
+        messages = await pg.get_messages(package_id)
+        # Convert timestamps to ISO format
+        for msg in messages:
+            if msg.get('timestamp'):
+                msg['timestamp'] = msg['timestamp'].isoformat()
+        return JSONResponse({"messages": messages})
+    except Exception as e:
+        print("Error retrieving messages:", e)
+        raise HTTPException(status_code=500, detail=str(e))

@@ -7,7 +7,16 @@ Millions of packages are handled every day in contemporary logistics and e-comme
 - Provide real-time visual feedback for detected damage, highlighting affected areas.  
 - Reduce manual inspection time and minimize human error in logistics operations.  
 - Increase accuracy, transparency, and trust in AI-based quality assurance systems.  
-- Build and deploy a web-based platform accessible to logistics teams and warehouse operators.  
+- Build and deploy a web-based platform accessible to logistics teams and warehouse operators.
+- Enable communication and collaboration through integrated messaging features.
+
+# Features
+- **AI-Powered Damage Detection**: Automated detection and classification of package damage using YOLOv8
+- **Explainable AI**: Visualization of model decisions using Grad-CAM and SHAP
+- **Real-time Processing**: Fast inference for immediate feedback
+- **Web-Based Interface**: User-friendly Angular frontend for uploading and viewing results
+- **Package Messaging**: Integrated chat/messaging system for communication about package issues
+- **Database Storage**: Comprehensive tracking of packages, images, predictions, and messages
 
 # Technology Stack
 | **Component**                   | **Technologies**                          |
