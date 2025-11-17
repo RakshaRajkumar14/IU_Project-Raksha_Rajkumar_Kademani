@@ -13,7 +13,14 @@ Features:
 - JWT authentication
 - Real-time dashboard statistics
 """
-
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
+from typing import Optional
+from pydantic import BaseModel
 import os
 import io
 import time
@@ -28,6 +35,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import List, Dict
+import bcrypt
 
 # Load environment variables
 load_dotenv()
@@ -42,6 +50,8 @@ from services.explainability_services import (
 )
 from db import pg
 from auth import (
+    ALGORITHM,
+    SECRET_KEY,
     authenticate_user, 
     create_access_token, 
     get_current_active_user,
@@ -230,53 +240,114 @@ def draw_detections_on_image(img_array, predictions):
                    font, 0.6, (255, 255, 255), 2)
     
     return annotated
+# ============================================================================
+# AUTHENTICATION SETUP
+# ============================================================================
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password using bcrypt"""
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'), 
+            hashed_password.encode('utf-8')
+        )
+    except:
+        return False
+
+def get_password_hash(password: str) -> str:
+    """Hash password using bcrypt"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
 
 # ============================================================================
 # AUTHENTICATION ENDPOINTS
 # ============================================================================
 
 @app.post("/api/auth/login", response_model=Token)
-async def login(user_data: UserLogin):
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
-    Admin login endpoint
+    Admin login endpoint - OAuth2 compatible
     
     Default credentials:
     - Username: admin
     - Password: admin123
     """
-    print(f"\n🔐 Login attempt: {user_data.username}")
+    print(f"\n🔐 Login attempt for user: {form_data.username}")
     
-    user = await authenticate_user(user_data.username, user_data.password)
-    
-    if not user:
-        print(f"❌ Login failed: Invalid credentials")
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password"
+    try:
+        # Get database pool
+        pool = await pg.init_pool()
+        
+        # Query user from database
+        user = await pool.fetchrow(
+            "SELECT * FROM users WHERE username = $1",
+            form_data.username
         )
-    
-    # Update last login
-    await pg.update_last_login(user_data.username)
-    
-    # Create access token
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user['username']},
-        expires_delta=access_token_expires
-    )
-    
-    print(f"✅ Login successful: {user_data.username}")
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "username": user['username'],
-            "full_name": user['full_name'],
-            "email": user['email'],
-            "role": user['role']
+        
+        if not user:
+            print(f"   ❌ User not found: {form_data.username}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        print(f"   ✅ User found: {user['username']}")
+        
+        # Verify password
+        if not verify_password(form_data.password, user['hashed_password']):
+            print(f"   ❌ Invalid password")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        print(f"   ✅ Password verified")
+        
+        # Check if user is active
+        if not user['is_active']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user"
+            )
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user['username']}, 
+            expires_delta=access_token_expires
+        )
+        
+        # Update last login
+        await pool.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = $1",
+            form_data.username
+        )
+        
+        print(f"   ✅ Login successful for: {form_data.username}\n")
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "username": user['username'],
+                "full_name": user['full_name'],
+                "email": user['email'],
+                "role": user['role']
+            }
         }
-    }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"\n❌ Error in login: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 @app.get("/api/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_active_user)):
@@ -288,7 +359,6 @@ async def get_current_user_info(current_user: dict = Depends(get_current_active_
         "role": current_user['role'],
         "last_login": current_user['last_login'].isoformat() if current_user['last_login'] else None
     }
-
 # ============================================================================
 # DETECTION ENDPOINT
 # ============================================================================

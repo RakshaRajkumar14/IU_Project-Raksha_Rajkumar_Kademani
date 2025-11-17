@@ -44,8 +44,8 @@ async def setup_database():
     """Complete database setup with all tables"""
     
     DB_CONFIG = {
-        'user': 'postgres',
-        'password': 'postgres',
+        'user': 'raksharajkumarkademani',
+        'password': '',
         'host': 'localhost',
         'port': 5432,
         'database': 'IUProjectLocal'
@@ -296,7 +296,7 @@ async def setup_database():
         print(Colors.END)
         
         print(f"\n{Colors.YELLOW}📝 Database Connection:{Colors.END}")
-        print(f"   POSTGRES_DSN=postgresql://postgres:@localhost:5432/IUProjectLocal")
+        print(f"   POSTGRES_DSN=postgresql://postgres:postgres123@localhost:5432/IUProjectLocal")
         
         print(f"\n{Colors.YELLOW}👤 Admin Login Credentials:{Colors.END}")
         print(f"   Username: admin")

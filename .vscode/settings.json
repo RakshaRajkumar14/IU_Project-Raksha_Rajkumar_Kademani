@@ -6,11 +6,10 @@
             "server": "localhost",
             "port": 5432,
             "driver": "PostgreSQL",
-            "name": "IUProjectLocal",
+            "name": "IUProject",
             "database": "postgres",
             "username": "postgres",
-            "password": "raksha*14",
-            "connectionTimeout": 30
+            "password": "postgres"
         }
     ]
 }

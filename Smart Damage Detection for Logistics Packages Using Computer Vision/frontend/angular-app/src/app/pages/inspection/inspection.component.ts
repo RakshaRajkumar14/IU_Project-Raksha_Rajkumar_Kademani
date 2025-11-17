@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { Dashboard3DBackgroundComponent } from '../dashboard/ddashboard-3d-background.component';
+import { Dashboard3DBackgroundComponent } from '../dashboard/dashboard-3d-background.component';
 
 interface Package {
   id: string;
