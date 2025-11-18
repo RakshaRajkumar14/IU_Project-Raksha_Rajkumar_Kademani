@@ -296,7 +296,7 @@ async def setup_database():
         print(Colors.END)
         
         print(f"\n{Colors.YELLOW}📝 Database Connection:{Colors.END}")
-        print(f"   POSTGRES_DSN=postgresql://postgres:postgres123@localhost:5432/IUProjectLocal")
+        print(f"   POSTGRES_DSN=postgresql://postgres:postgres123@localhost:5432/IUProjectLocalsource venv/bin/activate")
         
         print(f"\n{Colors.YELLOW}👤 Admin Login Credentials:{Colors.END}")
         print(f"   Username: admin")

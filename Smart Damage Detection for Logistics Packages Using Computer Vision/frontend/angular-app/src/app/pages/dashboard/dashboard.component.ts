@@ -124,15 +124,30 @@ interface PerformanceMetric {
     </div>
   `,
   styles: [`
-    .dashboard-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 2rem;
-      min-height: 100vh;
-      position: relative;
-      z-index: 1;
-    }
+    
+   /* Dashboard with Sidebar Layout Fix */
+:host {
+  display: block;
+  width: 100%;
+  min-height: 100vh;
+}
 
+.dashboard-container {
+  width: 100%;
+  min-height: 100vh;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure all content is properly positioned */
+.dashboard-header,
+.upload-section,
+.performance-section,
+.recent-detections {
+  position: relative;
+  z-index: 1;
+}
     /* Glass Effect for Cards - AI Theme */
     .glass-effect {
       background: rgba(10, 25, 41, 0.7) !important;

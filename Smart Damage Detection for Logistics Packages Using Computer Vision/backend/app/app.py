@@ -1,7 +1,7 @@
 """
 Package Damage Detection API - Complete Application
 Author: RakshaRajkumar14
-Date: 2025-11-16 11:11:12 UTC
+Date: 2025-11-18 14:47:46 UTC
 Database: IUProjectLocal (PostgreSQL)
 Storage: AWS S3 (damage-detection-images-s3, eu-north-1)
 
@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
         await pg.init_pool()
         print("✅ Database connected: IUProjectLocal")
     else:
-        print("⚠️  POSTGRES_DSN not set")
+        print("⚠️  POSTGRES_DSN not set - Database will not be used!")
     
     # Initialize YOLO model
     init_model()
@@ -240,6 +240,7 @@ def draw_detections_on_image(img_array, predictions):
                    font, 0.6, (255, 255, 255), 2)
     
     return annotated
+
 # ============================================================================
 # AUTHENTICATION SETUP
 # ============================================================================
@@ -257,7 +258,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     """Hash password using bcrypt"""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
 
 # ============================================================================
 # AUTHENTICATION ENDPOINTS
@@ -295,7 +295,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         print(f"   ✅ User found: {user['username']}")
         
         # Verify password
-        if not verify_password(form_data.password, user['hashed_password']):
+        if not verify_password(form_data.password, user['password_hash']):
             print(f"   ❌ Invalid password")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -305,8 +305,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         
         print(f"   ✅ Password verified")
         
+        is_active = user.get('is_active', True)
         # Check if user is active
-        if not user['is_active']:
+        if is_active is False:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inactive user"
@@ -359,6 +360,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_active_
         "role": current_user['role'],
         "last_login": current_user['last_login'].isoformat() if current_user['last_login'] else None
     }
+
 # ============================================================================
 # DETECTION ENDPOINT
 # ============================================================================
@@ -487,6 +489,10 @@ async def detect(
             
         except Exception as e:
             print(f"❌ Database error: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print("\n⚠️  Skipping database save - POSTGRES_DSN not configured")
 
     # STEP 5: Process predictions and upload crops
     boxes_for_explainability = []
@@ -527,14 +533,32 @@ async def detect(
         if os.getenv("POSTGRES_DSN") and image_id:
             try:
                 pred_id = f"PRED-{tracking_code}-{i+1:03d}"
-                await pg.insert_prediction(
-                    image_id, pred_id, class_id, class_name, score,
-                    x1, y1, x2, y2, 
-                    crop_s3_url, crop_s3_key
+                damage_detected = class_name.lower() not in ['no_damage', 'none', 'normal', 'good']
+                
+                # Direct insert with all fields
+                pool = await pg.init_pool()
+                prediction_id = await pool.fetchval("""
+                    INSERT INTO predictions (
+                        image_id, pred_id, class_id, class_name, 
+                        score, confidence, x1, y1, x2, y2, 
+                        crop_s3_url, crop_s3_key, 
+                        damage_detected, damage_type, created_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+                    RETURNING id
+                """, 
+                    image_id, pred_id, class_id, class_name,
+                    score, score, x1, y1, x2, y2,
+                    crop_s3_url, crop_s3_key,
+                    damage_detected, class_name
                 )
-                print(f"   ✅ Prediction {i+1}: {class_name} ({score*100:.1f}%)")
+                
+                print(f"   ✅ DB SAVED - ID: {prediction_id} | {class_name} ({score*100:.1f}%)")
+                
             except Exception as e:
-                print(f"   ❌ Save failed: {e}")
+                print(f"   ❌ DB ERROR: {e}")
+                import traceback
+                traceback.print_exc()
         
         processed_preds.append({
             'id': i + 1,

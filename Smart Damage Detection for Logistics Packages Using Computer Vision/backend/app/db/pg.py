@@ -210,23 +210,43 @@ async def insert_prediction(
     crop_s3_key: str = None
 ):
     """Insert prediction record"""
-    pool = await init_pool()
-    q = """
-    INSERT INTO predictions (
-        image_id, pred_id, class_id, class_name, score, 
-        x1, y1, x2, y2, 
-        crop_s3_url, crop_s3_key,
-        created_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-    RETURNING id;
-    """
-    row = await pool.fetchrow(
-        q, image_id, pred_id, class_id, class_name, score,
-        x1, y1, x2, y2, crop_s3_url, crop_s3_key
-    )
-    return row['id']
-
+    try:
+        pool = await init_pool()
+        
+        print(f"💾 Inserting prediction to DB:")
+        print(f"   - image_id: {image_id}")
+        print(f"   - class: {class_name}")
+        print(f"   - score: {score}")
+        
+        q = """
+        INSERT INTO predictions (
+            image_id, pred_id, class_id, class_name, score, 
+            confidence, x1, y1, x2, y2, 
+            crop_s3_url, crop_s3_key,
+            damage_detected, damage_type, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+        RETURNING id;
+        """
+        
+        damage_detected = class_name.lower() not in ['no_damage', 'none']
+        
+        row = await pool.fetchrow(
+            q, image_id, pred_id, class_id, class_name, score,
+            score, x1, y1, x2, y2, crop_s3_url, crop_s3_key,
+            damage_detected, class_name
+        )
+        
+        pred_id = row['id']
+        print(f"   ✅ Inserted successfully with ID: {pred_id}")
+        return pred_id
+        
+    except Exception as e:
+        print(f"   ❌ Insert failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
 # ============================================================================
 # DASHBOARD STATISTICS
 # ============================================================================

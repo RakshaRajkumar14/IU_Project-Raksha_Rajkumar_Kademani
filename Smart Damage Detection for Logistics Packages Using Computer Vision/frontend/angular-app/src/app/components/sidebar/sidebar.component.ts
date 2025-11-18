@@ -1,7 +1,8 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-sidebar',
@@ -60,7 +61,7 @@ import { AuthService } from '../../services/auth.service';
           <span *ngIf="!isCollapsed">Upload & Detect</span>
         </a>
 
-        <a routerLink="/history" routerLinkActive="active" class="nav-item" (click)="onNavClick()">
+        <a routerLink="/queue" routerLinkActive="active" class="nav-item" (click)="onNavClick()">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <polyline points="12 6 12 12 16 14"/>
@@ -68,7 +69,7 @@ import { AuthService } from '../../services/auth.service';
           <span *ngIf="!isCollapsed">History</span>
         </a>
 
-        <a routerLink="/analytics" routerLinkActive="active" class="nav-item" (click)="onNavClick()">
+        <a routerLink="/reports" routerLinkActive="active" class="nav-item" (click)="onNavClick()">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="20" x2="18" y2="10"/>
             <line x1="12" y1="20" x2="12" y2="4"/>
@@ -101,14 +102,48 @@ import { AuthService } from '../../services/auth.service';
     <div class="mobile-overlay" *ngIf="isMobileOpen" (click)="closeMobile.emit()"></div>
   `,
   styles: [`
-    /* Your existing sidebar styles + logout button styles */
-    .logout-btn {
-      color: #ff6b6b !important;
-      background: rgba(255, 107, 107, 0.1) !important;
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 280px;
+      height: 100vh;
+      background: linear-gradient(180deg, #1a2332 0%, #0f1419 100%);
+      border-right: 1px solid rgba(95, 247, 210, 0.1);
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+      overflow-y: auto;
+      transition: width 0.3s ease;
     }
 
-    .logout-btn:hover {
-      background: rgba(255, 107, 107, 0.2) !important;
+    .sidebar.collapsed {
+      width: 80px;
+    }
+
+    .sidebar-header {
+      padding: 2rem 1.5rem;
+      border-bottom: 1px solid rgba(95, 247, 210, 0.1);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      color: #5ff7d2;
+    }
+
+    .logo-text h2 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #5ff7d2;
+    }
+
+    .logo-text p {
+      margin: 0.25rem 0 0 0;
+      font-size: 0.75rem;
+      color: rgba(95, 247, 210, 0.6);
     }
 
     .user-info {
@@ -124,17 +159,19 @@ import { AuthService } from '../../services/auth.service';
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #5ff7d2 0%, #4fd1c5 100%);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
+      color: #0f1419;
       font-weight: 700;
       font-size: 14px;
+      flex-shrink: 0;
     }
 
     .user-details {
       flex: 1;
+      min-width: 0;
     }
 
     .user-name {
@@ -142,19 +179,179 @@ import { AuthService } from '../../services/auth.service';
       font-size: 14px;
       font-weight: 600;
       color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .user-role {
       margin: 2px 0 0 0;
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.6);
+      color: rgba(95, 247, 210, 0.8);
       text-transform: capitalize;
     }
 
-    /* Add your existing sidebar styles here */
+    .sidebar-nav {
+      flex: 1;
+      padding: 1rem 0;
+      overflow-y: auto;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.875rem 1.5rem;
+      color: #94a3b8;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border-left: 3px solid transparent;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      background: none;
+      border-right: none;
+      border-top: none;
+      border-bottom: none;
+      width: 100%;
+      text-align: left;
+    }
+
+    .nav-item:hover {
+      background: rgba(95, 247, 210, 0.05);
+      color: #5ff7d2;
+      border-left-color: #5ff7d2;
+    }
+
+    .nav-item.active {
+      background: rgba(95, 247, 210, 0.1);
+      color: #5ff7d2;
+      border-left-color: #5ff7d2;
+    }
+
+    .nav-item svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-bottom {
+      padding: 1rem;
+      border-top: 1px solid rgba(95, 247, 210, 0.1);
+    }
+
+    .logout-btn {
+      color: #ff6b6b !important;
+      background: rgba(255, 107, 107, 0.1) !important;
+      margin-bottom: 0.5rem;
+    }
+
+    .logout-btn:hover {
+      background: rgba(255, 107, 107, 0.2) !important;
+    }
+
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      width: 100%;
+      background: rgba(95, 247, 210, 0.05);
+      border: 1px solid rgba(95, 247, 210, 0.2);
+      border-radius: 8px;
+      color: #5ff7d2;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .toggle-btn:hover {
+      background: rgba(95, 247, 210, 0.1);
+    }
+
+    .toggle-btn svg {
+      transition: transform 0.3s ease;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: none;
+    }
+
+    .mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+    }
+
+    /* Collapsed state */
+    .sidebar.collapsed .logo-text,
+    .sidebar.collapsed .user-details,
+    .sidebar.collapsed .nav-item span {
+      display: none;
+    }
+
+    .sidebar.collapsed .nav-item {
+      justify-content: center;
+      padding: 0.875rem;
+    }
+
+    .sidebar.collapsed .user-info {
+      justify-content: center;
+    }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+
+      .close-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .mobile-overlay {
+        display: block;
+      }
+    }
+
+    /* Scrollbar */
+    .sidebar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .sidebar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background: rgba(95, 247, 210, 0.3);
+      border-radius: 3px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb:hover {
+      background: rgba(95, 247, 210, 0.5);
+    }
   `]
 })
-export class SidebarComponent {
+export class SidebarComponent implements OnInit {
   @Input() isCollapsed = false;
   @Input() isMobileOpen = false;
   @Output() toggleCollapse = new EventEmitter<boolean>();
@@ -165,8 +362,38 @@ export class SidebarComponent {
   constructor(
     private authService: AuthService,
     private router: Router
-  ) {
-    this.currentUser = this.authService.getCurrentUser();
+  ) {}
+
+  ngOnInit(): void {
+    // Load user on initialization
+    this.loadCurrentUser();
+
+    // Subscribe to user changes
+    this.authService.currentUser$.subscribe(user => {
+      console.log('👤 Sidebar: User updated', user);
+      this.currentUser = user;
+    });
+
+    // Reload user on navigation
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd)
+    ).subscribe(() => {
+      this.loadCurrentUser();
+    });
+  }
+
+  private loadCurrentUser(): void {
+    const user = this.authService.getCurrentUser();
+    if (user) {
+      console.log('✅ Sidebar: User loaded', user);
+      this.currentUser = user;
+    } else {
+      console.log('⚠️ Sidebar: No user found, attempting to fetch...');
+      // If no user in localStorage, try to get from service
+      this.authService.currentUser$.subscribe(u => {
+        this.currentUser = u;
+      });
+    }
   }
 
   getUserInitials(): string {
@@ -178,11 +405,12 @@ export class SidebarComponent {
     return this.currentUser.full_name[0].toUpperCase();
   }
 
-  logout() {
+  logout(): void {
+    console.log('🚪 Logout clicked');
     this.authService.logout();
   }
 
-  onNavClick() {
+  onNavClick(): void {
     // Close mobile sidebar when navigating
     if (this.isMobileOpen) {
       this.closeMobile.emit();
