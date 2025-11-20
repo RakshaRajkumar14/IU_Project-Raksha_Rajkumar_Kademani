@@ -216,6 +216,12 @@ interface DetectionResponse {
                 </svg>
                 More Photos
               </button>
+              <button class="action-btn secondary" (click)="downloadOperatorReport()">
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M12 2v7M12 22v-7M5 7h14M5 17h14"/>
+  </svg>
+  Download Operator Report
+</button>
             </div>
           </div>
         </div>
@@ -332,54 +338,166 @@ interface DetectionResponse {
         </div>
       </div>
 
-      <!-- Explainability Modal -->
-      <div class="explainability-modal" *ngIf="showExplainability" (click)="toggleExplainability()">
-        <div class="modal-content glass-effect" (click)="$event.stopPropagation()">
-          <button class="modal-close" (click)="toggleExplainability()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-          
-          <h2>AI Explainability Analysis</h2>
-          
-          <div class="explainability-tabs">
-            <button class="tab-btn" [class.active]="explainView === 'gradcam'" (click)="explainView = 'gradcam'" *ngIf="detectionResult?.gradcam_url">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-              GradCAM
-            </button>
-            <button class="tab-btn" [class.active]="explainView === 'shap'" (click)="explainView = 'shap'" *ngIf="detectionResult?.shap_url">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <path d="M3 9h18M9 21V9"/>
-              </svg>
-              SHAP
-            </button>
-          </div>
+     <!-- Explainability Modal -->
+<div class="explainability-modal" *ngIf="showExplainability" (click)="toggleExplainability()">
+  <div class="modal-content glass-effect" (click)="$event.stopPropagation()">
+    <button class="modal-close" (click)="toggleExplainability()" aria-label="Close">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
 
-          <div class="explainability-content">
-            <div class="explain-image-wrapper" *ngIf="explainView === 'gradcam' && detectionResult?.gradcam_url">
-              <img [src]="detectionResult?.gradcam_url || ''" alt="GradCAM Heatmap">
-              <div class="explain-description">
-                <h4>Gradient-weighted Class Activation Mapping</h4>
-                <p>Highlights the regions that most influenced the AI's damage detection decision. Warmer colors (red/yellow) indicate higher importance.</p>
+    <!-- Header -->
+    <div class="modal-header">
+      <div class="modal-title-section">
+        <div class="title-icon-wrapper">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="modal-title">AI Damage Analysis</h1>
+          <p class="modal-subtitle">Intelligent operator inspection report</p>
+        </div>
+      </div>
+
+      <div class="modal-header-actions">
+        <div class="tracking-code-badge" *ngIf="detectionResult?.tracking_code">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+          </svg>
+          <span>{{ detectionResult.tracking_code }}</span>
+        </div>
+        <button class="modal-download-btn" (click)="downloadOperatorReport()" title="Download report">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+          </svg>
+          Download Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Analysis Grid -->
+    <div class="modal-grid">
+      <!-- Left Column: Overview -->
+      <div class="modal-left">
+        <div class="damage-overview-card glass-effect">
+          <h2 class="overview-question">Why is this package damaged?</h2>
+          
+          <div class="primary-damage-info">
+            <div class="damage-type-badge" [style.border-color]="primaryDamage?.color || '#00ffff'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" [style.color]="primaryDamage?.color || '#00ffff'">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+              </svg>
+              <span>{{ primaryDamage?.class_name || 'Unknown' }}</span>
+            </div>
+
+            <div class="damage-metrics">
+              <div class="metric-item">
+                <div class="metric-label">Confidence</div>
+                <div class="metric-value">{{ (primaryDamage?.score * 100) | number:'1.0-0' }}%</div>
+                <div class="metric-bar">
+                  <div class="metric-fill" [style.width.%]="(primaryDamage?.score || 0) * 100" [style.background]="primaryDamage?.color || '#00ffff'"></div>
+                </div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-label">Total Damages</div>
+                <div class="metric-value">{{ detectionResult?.total_damages || 0 }}</div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-label">Location</div>
+                <div class="metric-value">{{ primaryDamage?.dimensions || 'Unknown' }}</div>
               </div>
             </div>
-            <div class="explain-image-wrapper" *ngIf="explainView === 'shap' && detectionResult?.shap_url">
-              <img [src]="detectionResult?.shap_url || ''" alt="SHAP Analysis">
-              <div class="explain-description">
-                <h4>SHAP (SHapley Additive exPlanations)</h4>
-                <p>Shows feature importance and contribution to the model's prediction. Helps understand which image features drove the detection.</p>
+          </div>
+
+          <!-- Severity Breakdown -->
+          <div class="severity-breakdown">
+            <h3 class="breakdown-title">Severity Distribution</h3>
+            <div class="severity-items">
+              <div class="severity-breakdown-item severe">
+                <div class="severity-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  </svg>
+                </div>
+                <div class="severity-info">
+                  <span class="severity-label">Severe</span>
+                  <span class="severity-count">{{ getSeverityCount('severe') }}</span>
+                </div>
+              </div>
+              <div class="severity-breakdown-item moderate">
+                <div class="severity-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  </svg>
+                </div>
+                <div class="severity-info">
+                  <span class="severity-label">Moderate</span>
+                  <span class="severity-count">{{ getSeverityCount('moderate') }}</span>
+                </div>
+              </div>
+              <div class="severity-breakdown-item minor">
+                <div class="severity-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="12" r="10"/>
+                  </svg>
+                </div>
+                <div class="severity-info">
+                  <span class="severity-label">Minor</span>
+                  <span class="severity-count">{{ getSeverityCount('minor') }}</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Right Column: Explanation Cards -->
+      <div class="modal-right">
+        <div class="explanation-cards">
+          <div class="explanation-card glass-effect what">
+            <div class="card-icon">📋</div>
+            <div class="card-content">
+              <h3 class="card-heading">What Happened</h3>
+              <p class="card-description">{{ primaryExplanation?.what || 'No details available.' }}</p>
+            </div>
+          </div>
+
+          <div class="explanation-card glass-effect why">
+            <div class="card-icon">⚠️</div>
+            <div class="card-content">
+              <h3 class="card-heading">Why It Matters</h3>
+              <p class="card-description">{{ primaryExplanation?.why || 'No details available.' }}</p>
+            </div>
+          </div>
+
+          <div class="explanation-card glass-effect cause">
+            <div class="card-icon">🔧</div>
+            <div class="card-content">
+              <h3 class="card-heading">Likely Cause</h3>
+              <p class="card-description">{{ primaryExplanation?.cause || 'No details available.' }}</p>
+            </div>
+          </div>
+
+          <div class="explanation-card glass-effect recommendation">
+            <div class="card-icon">✅</div>
+            <div class="card-content">
+              <h3 class="card-heading">Recommendation</h3>
+              <p class="card-description">{{ primaryExplanation?.recommendation || 'Inspect package further.' }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <p>This analysis is generated by AI. Use the downloadable report for official documentation.</p>
+    </div>
+  </div>
+</div>
   `,
   styles: [`
     :host {
@@ -1345,6 +1463,152 @@ interface DetectionResponse {
         justify-content: center;
       }
     }
+      /* ----- Explainability modal V2 styles (matching provided screenshot) ----- */
+.explainability-modal.v2 {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.75));
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 1100px;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+  color: white;
+  position: relative;
+}
+
+/* Close button (top-right) */
+.modal-close {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  width: 44px;
+  height: 44px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  cursor: pointer;
+}
+
+/* header row */
+.modal-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.modal-title-block {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.title-icon { font-size: 28px; }
+.modal-title { margin: 0; font-size: 30px; font-weight: 800; color: #fff; }
+.subtitle { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* tracking pill */
+.tracking-pill {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(0,255,255,0.12);
+  background: rgba(0,255,255,0.02);
+  color: #bff7f3;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+
+/* top-right action buttons */
+.modal-actions-right { display:flex; gap:12px; align-items:center; }
+
+/* layout grid */
+.modal-body.v2-grid {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 22px;
+  align-items: start;
+}
+
+/* left column */
+.big-question {
+  margin: 0 0 18px 0;
+  font-size: 30px;
+  color: white;
+  font-weight: 800;
+}
+
+.small-meta {
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+.meta-row { display:flex; align-items:center; gap:12px; justify-content: space-between; }
+.meta-label { color: rgba(255,255,255,0.6); font-weight:700; }
+.meta-value { color: white; font-weight:800; font-size:18px; }
+.meta-dot { width:10px; height:10px; border-radius:6px; display:inline-block; margin-left:6px; }
+
+/* stacked right cards */
+.stacked-cards { display:flex; flex-direction:column; gap:12px; }
+
+.explain-card {
+  display:flex;
+  align-items: stretch;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.04);
+  min-height: 68px;
+}
+
+.explain-card .card-accent {
+  width: 12px;
+  border-radius: 6px 0 0 6px;
+  margin-right: 14px;
+}
+
+/* cyan accent for first 3 cards */
+.explain-card.cyan .card-accent { background: linear-gradient(180deg,#00ffff,#00d6b8); box-shadow: 0 6px 18px rgba(0,255,255,0.04); }
+
+/* orange accent for recommendation */
+.explain-card.orange.recommendation .card-accent { background: linear-gradient(180deg,#ffb36b,#ff8a00); box-shadow: 0 6px 18px rgba(255,150,0,0.04); }
+
+.card-body { padding: 12px 18px; display:flex; flex-direction:column; gap:6px; justify-content:center; }
+
+.card-title { font-weight:800; color:#bff7f3; font-size:15px; }
+.explain-card.orange .card-title { color: #ffd2a2; }
+
+/* text area */
+.card-text { color: rgba(255,255,255,0.9); font-size:14px; line-height:1.35; }
+
+/* footer */
+.modal-footer { margin-top: 16px; color: rgba(255,255,255,0.45); font-size:13px; text-align:right; }
+
+/* responsive */
+@media (max-width: 1100px) {
+  .modal-body.v2-grid { grid-template-columns: 1fr; }
+  .modal-content { padding: 18px; }
+  .modal-title { font-size: 24px; }
+}
+
   `]
 })
 export class UploadComponent {
@@ -1352,6 +1616,8 @@ export class UploadComponent {
   
   private apiUrl = 'http://localhost:8000/api';
   private isBrowser: boolean;
+primaryDamage: DetectedDamage | null = null;
+primaryExplanation: { what: string; why: string; cause: string; recommendation: string } | null = null;
 
   uploadedImage: string | null = null;
   selectedFile: File | null = null;
@@ -1423,17 +1689,22 @@ export class UploadComponent {
   }
 
   async processImage() {
-    if (!this.selectedFile) return;
+    if (!this.selectedFile) {
+    console.error('❌ No file selected');
+    return;};
 
     const token = this.authService.getToken();
     
     if (!token) {
+          console.error('❌ No token found');
       this.errorMessage = 'You must be logged in to detect damages. Redirecting to login...';
       setTimeout(() => {
         this.authService.logout();
       }, 2000);
       return;
     }
+console.log('✅ Starting detection process...');
+  console.log('📁 File:', this.selectedFile.name);
 
     this.isProcessing = true;
     this.processingProgress = 0;
@@ -1448,45 +1719,84 @@ export class UploadComponent {
         this.processingProgress += 10;
       }
     }, 300);
-
+// Timeout after 60 seconds
+  const timeoutId = setTimeout(() => {
+    clearInterval(progressInterval);
+    this.isProcessing = false;
+    this.errorMessage = 'Request timeout. The server took too long to respond. Please try again.';
+    console.error('❌ Request timeout after 60 seconds');
+  }, 60000);
     try {
-      const headers = new HttpHeaders({
-        'Authorization': `Bearer ${token}`
-      });
+    const headers = new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
 
-      console.log('🚀 Sending detection request...');
-      console.log('📁 File:', this.selectedFile.name);
-      console.log('🔑 Token:', token.substring(0, 20) + '...');
-      
-      const obs = this.http.post<DetectionResponse>(`${this.apiUrl}/detect`, formData, { headers });
-      this.detectionResult = await firstValueFrom(obs);
+    console.log('🚀 Sending POST to:', `${this.apiUrl}/detect`);
+    console.log('📦 FormData contains:', this.selectedFile.name);
+    
+    const startTime = Date.now();
+    
+    // Make the request
+    const response$ = this.http.post<DetectionResponse>(
+      `${this.apiUrl}/detect`, 
+      formData, 
+      { headers }
+    );
+    
+    this.detectionResult = await firstValueFrom(response$);
+    this.primaryDamage = this.getPrimaryDamage();
+this.primaryExplanation = this.getOperatorExplanation(this.primaryDamage?.class_name || '');
 
-      console.log('✅ Detection response:', this.detectionResult);
+console.log('Primary damage (cached):', this.primaryDamage);
+console.log('Primary explanation (cached):', this.primaryExplanation);
+    
+    // Clear timeout and interval
+    clearTimeout(timeoutId);
+    clearInterval(progressInterval);
+    
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`✅ Detection completed in ${duration}s`);
+    console.log('📊 Result:', this.detectionResult);
 
-      clearInterval(progressInterval);
-      this.processingProgress = 100;
+    this.processingProgress = 100;
 
-      setTimeout(() => {
-        this.isProcessing = false;
-        this.hasDetections = this.detectionResult!.success && this.detectionResult!.total_damages > 0;
-        this.currentView = 'annotated';
-      }, 500);
-    } catch (error: any) {
-      console.error('❌ Detection error:', error);
-      clearInterval(progressInterval);
+    // Small delay before showing results
+    setTimeout(() => {
       this.isProcessing = false;
+      this.hasDetections = this.detectionResult!.success && this.detectionResult!.total_damages >= 0;
       
-      if (error.status === 401) {
-        this.errorMessage = 'Session expired. Please login again.';
-        setTimeout(() => {
-          this.authService.logout();
-        }, 2000);
-      } else if (error.status === 0) {
-        this.errorMessage = 'Cannot connect to backend. Make sure it\'s running on http://localhost:8000';
+      if (this.hasDetections) {
+        console.log(`✅ Found ${this.detectionResult!.total_damages} damage(s)`);
       } else {
-        this.errorMessage = error.error?.detail || 'Error processing image. Please try again.';
+        console.log('ℹ️ No damages detected');
       }
+    }, 500);
+
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    clearInterval(progressInterval);
+    this.isProcessing = false;
+    this.processingProgress = 0;
+    
+    console.error('❌ Detection error:', error);
+    console.error('Error status:', error.status);
+    console.error('Error message:', error.message);
+
+    if (error.status === 0) {
+      this.errorMessage = 'Cannot connect to server. Please check if the backend is running.';
+    } else if (error.status === 401) {
+      this.errorMessage = 'Authentication failed. Please login again.';
+      setTimeout(() => this.authService.logout(), 2000);
+    } else if (error.status === 413) {
+      this.errorMessage = 'Image file is too large. Please use a smaller image.';
+    } else if (error.status === 500) {
+      this.errorMessage = 'Server error. Please check backend logs.';
+    } else if (error.name === 'TimeoutError') {
+      this.errorMessage = 'Request timeout. Please try again.';
+    } else {
+      this.errorMessage = error.error?.detail || 'Failed to process image. Please try again.';
     }
+  }
   }
 
   getDisplayImage(): string {
@@ -1511,7 +1821,7 @@ export class UploadComponent {
     
     const typeCounts = new Map<string, { count: number; color: string }>();
     
-    this.detectionResult.detections.forEach(damage => {
+    this.detectionResult?.detections?.forEach(damage => {
       const current = typeCounts.get(damage.class_name) || { count: 0, color: damage.color };
       typeCounts.set(damage.class_name, { count: current.count + 1, color: damage.color });
     });
@@ -1542,8 +1852,11 @@ export class UploadComponent {
     this.showExplainability = false;
     this.errorMessage = null;
   }
+  
 
   downloadReport() {
+    console.log('detectionResult:', this.detectionResult);
+console.log('isBrowser:', this.isBrowser);
     if (!this.detectionResult || !this.isBrowser) return;
     
     const reportData = JSON.stringify(this.detectionResult, null, 2);
@@ -1560,7 +1873,7 @@ export class UploadComponent {
     if (!this.detectionResult || !this.isBrowser) return;
     
     let csv = 'Type,Severity,Confidence,Dimensions\n';
-    this.detectionResult.detections.forEach(damage => {
+    this.detectionResult?.detections?.forEach(damage => {
       csv += `${damage.class_name},${this.getSeverityLabel(damage.severity)},${(damage.score * 100).toFixed(1)},${damage.dimensions}\n`;
     });
     
@@ -1575,4 +1888,118 @@ export class UploadComponent {
   getSeverityCount(severity: 'severe' | 'moderate' | 'minor'): number {
   return this.detectionResult?.severity_counts?.[severity] ?? 0;
 }
+getPrimaryDamage(): DetectedDamage | null {
+  if (!this.detectionResult || !this.detectionResult.detections || this.detectionResult.detections.length === 0) return null;
+  return this.detectionResult.detections.reduce((a, b) => a.score > b.score ? a : b);
+}
+getPrimaryConfidencePercent(): number {
+  const primary = this.getPrimaryDamage();
+  if (!primary) return 0;
+  return Math.round(primary.score * 100);
+}
+getOperatorExplanation(damageType: string) {
+    const normalize = (s: string) => (s || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const normalize_key = normalize(damageType);
+  // ensure we don't call ourselves recursively (was happening via a console.log)
+  const explanations: Record<string, { what: string; why: string; cause: string; recommendation: string }> = {
+    torn: {
+      what: 'A noticeable tear or rip is present on the package.',
+      why: 'Potential contents exposure or loss.',
+      cause: 'Likely due to sharp objects or rough handling.',
+      recommendation: 'Reject package. Take photos and document.'
+    },
+    wet: {
+      what: 'Visible moisture or water staining is observed.',
+      why: 'Package content may be water-damaged.',
+      cause: 'Exposure to rain or liquid during transit.',
+      recommendation: 'Reject if contents are affected. Document and inform sender.'
+    },
+    crushed: {
+      what: 'Obvious structural deformation; package is crushed.',
+      why: 'Contents could be broken or defective.',
+      cause: 'Heavy weight or compression during handling.',
+      recommendation: 'Reject package and photograph condition.'
+    },
+    stained: {
+      what: 'Surface stains or discolorations are apparent.',
+      why: 'Possible contamination of contents.',
+      cause: 'Contact with chemicals/dirty surfaces.',
+      recommendation: 'Inspect contents. Accept only if clean/untouched.'
+    },
+    hole: {
+      what: 'Package has visible puncture or hole.',
+      why: 'Possible theft or loss of contents.',
+      cause: 'Piercing by an object, careless loading/unloading.',
+      recommendation: 'Reject package due to security risk.'
+    },
+    scratched: {
+      what: 'Surface scratches present.',
+      why: 'Usually cosmetic, but still document.',
+      cause: 'Rubbing/dragging on rough surfaces.',
+      recommendation: 'Accept with note if contents are OK.'
+    }
+  };
+
+  if (!damageType) {
+    return {
+      what: 'Not specified.',
+      why: 'Not specified.',
+      cause: 'Not specified.',
+      recommendation: 'Inspect package further.'
+    };
+  }
+
+  
+  return explanations[normalize_key] ?? {
+    what: 'Not specified.',
+    why: 'Not specified.',
+    cause: 'Not specified.',
+    recommendation: 'Inspect package further.'
+  };
+}
+
+
+downloadOperatorReport() {
+  if (!this.isBrowser) return;
+
+  const damage = this.getPrimaryDamage();
+  const explain = this.getOperatorExplanation(damage?.class_name || '');
+  const code = this.detectionResult?.tracking_code || `no-code-${Date.now()}`;
+
+  const lines = [
+    'Package Inspection Report',
+    '=============================',
+    `Tracking Code : ${code}`,
+    'Inspector     : LOG-2025-001',
+    '-----------------------------',
+    `Damage Type   : ${damage?.class_name || '-'}`,
+    `Confidence    : ${damage ? (damage.score * 100).toFixed(1) + '%' : '-'}`,
+    '-----------------------------',
+    `What happened : ${explain.what}`,
+    `Why it matters: ${explain.why}`,
+    `Likely cause  : ${explain.cause}`,
+    `Recommendation: ${explain.recommendation}`,
+    '-----------------------------',
+    `Detected ${this.detectionResult?.total_damages ?? 0} damages.`,
+    ''
+  ];
+
+  if (this.detectionResult?.detections?.length) {
+    lines.push(...this.detectionResult.detections.map((d, i) => `  ${i + 1}. ${d.class_name} - ${(d.score * 100).toFixed(1)}%`));
+  }
+
+  lines.push('', '-----------------------------', 'End of Report.');
+
+  const report = lines.join('\n');
+  const blob = new Blob([report], { type: 'text/plain' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `operator-report-${encodeURIComponent(code)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 }

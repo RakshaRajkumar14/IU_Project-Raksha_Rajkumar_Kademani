@@ -5,8 +5,9 @@
  */
 
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders} from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { AuthService } from './auth.service';
 
 export interface DashboardStats {
   total_packages_today: number;
@@ -30,10 +31,16 @@ export interface DashboardStats {
 export class DashboardService {
   private apiUrl = 'http://localhost:8000/api';
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient,
+    private authService: AuthService) {}
 
   getDashboardStats(): Observable<DashboardStats> {
-    return this.http.get<DashboardStats>(`${this.apiUrl}/dashboard/stats`);
+   const token = this.authService.getToken();
+    const headers = new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
+
+    return this.http.get<DashboardStats>(`${this.apiUrl}/dashboard/stats`, { headers });
   }
 
   getHealthCheck(): Observable<any> {

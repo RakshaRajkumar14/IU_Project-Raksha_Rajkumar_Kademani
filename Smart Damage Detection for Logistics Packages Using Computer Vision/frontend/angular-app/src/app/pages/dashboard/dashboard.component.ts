@@ -1,3 +1,6 @@
+import { DashboardService } from '../../services/dashboard.service';
+import { AuthService } from '../../services/auth.service';
+import { HttpClientModule } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
@@ -23,7 +26,8 @@ interface PerformanceMetric {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, Dashboard3DBackgroundComponent],
+  imports: [CommonModule, Dashboard3DBackgroundComponent, HttpClientModule],
+    providers: [DashboardService],
   template: `
     <!-- 3D AI Background -->
     <app-dashboard-3d-background></app-dashboard-3d-background>
@@ -505,6 +509,9 @@ interface PerformanceMetric {
   `]
 })
 export class DashboardComponent implements OnInit {
+   isLoading = false;
+     private refreshInterval: any;
+  private animationTimers: any[] = [];
   performanceMetrics: PerformanceMetric[] = [
     {
       label: 'Total Packages Scanned (Today)',
@@ -529,37 +536,150 @@ export class DashboardComponent implements OnInit {
     }
   ];
 
-  recentDetections: RecentDetection[] = [
-    {
-      id: '#8A34F91',
-      image: 'assets/package1.jpg',
-      damageType: 'Puncture',
-      damageClass: 'puncture',
-      timestamp: '2 min ago',
-      confidence: 94.5
-    },
-    {
-      id: '#2B77A04',
-      image: 'assets/package2.jpg',
-      damageType: 'Dent',
-      damageClass: 'dent',
-      timestamp: '15 min ago',
-      confidence: 87.3
-    },
-    {
-      id: '#9C82E15',
-      image: 'assets/package3.jpg',
-      damageType: 'Tear',
-      damageClass: 'tear',
-      timestamp: '28 min ago',
-      confidence: 91.2
-    }
-  ];
+  recentDetections: RecentDetection[] = [];
 
-  constructor(private router: Router) {}
+  constructor(private router: Router,
+    private dashboardService: DashboardService,
+  private authService: AuthService
+  ) {}
 
   ngOnInit(): void {
-    this.animateCounters();
+    // Load stats immediately
+    this.loadDashboardStats();
+    
+    // Auto-refresh every 30 seconds
+    this.refreshInterval = setInterval(() => {
+      this.loadDashboardStats();
+    }, 30000);
+  }
+ngOnDestroy(): void {
+    // Clean up interval when component is destroyed
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+    
+    // Clean up animation timers
+    this.animationTimers.forEach(timer => clearInterval(timer));
+    this.animationTimers = [];
+  }
+  loadDashboardStats(): void {
+    const token = this.authService.getToken();
+    if (!token) {
+      console.warn('⚠️  No auth token found, skipping dashboard stats load');
+      return;
+    }
+
+    this.isLoading = true;
+
+    this.dashboardService.getDashboardStats().subscribe({
+      next: (stats) => {
+        console.log('✅ Dashboard stats loaded:', stats);
+        
+        // Animate metrics with real data from API
+        this.animateMetric(0, stats.total_packages_today);
+        this.animateMetric(1, stats.total_damages_today);
+        
+        // For text value (most common damage), update directly
+        this.performanceMetrics[2].value = stats.most_common_damage || 'None';
+        
+        // Update recent detections
+        this.recentDetections = stats.recent_detections.map(d => ({
+          id: d.id,
+          image: '',
+          damageType: d.damageType || d.damageClass,
+          damageClass: this.mapDamageClass(d.damageClass),
+          timestamp: this.formatTimestamp(d.timestamp),
+          confidence: Math.round(d.confidence * 100) / 100
+        }));
+
+        this.isLoading = false;
+      },
+      error: (err) => {
+        console.error('❌ Failed to load dashboard stats:', err);
+        this.isLoading = false;
+      }
+    });
+  }
+
+  /**
+   * Animate counter from current value to target value
+   * @param index - Index of the metric to animate
+   * @param targetValue - Target value to animate to
+   */
+  animateMetric(index: number, targetValue: number): void {
+    const metric = this.performanceMetrics[index];
+    const currentValue = typeof metric.value === 'number' ? metric.value : 0;
+    const difference = targetValue - currentValue;
+    
+    // If no change, don't animate
+    if (difference === 0) {
+      return;
+    }
+
+    // Animation duration in milliseconds
+    const duration = 1500;
+    // Number of steps in animation
+    const steps = 60;
+    // Time per step
+    const stepTime = duration / steps;
+    // Value to increment per step
+    const increment = difference / steps;
+
+    let currentStep = 0;
+    let animatedValue = currentValue;
+
+    // Clear any existing animation for this metric
+    if (this.animationTimers[index]) {
+      clearInterval(this.animationTimers[index]);
+    }
+
+    // Create animation interval
+    this.animationTimers[index] = setInterval(() => {
+      currentStep++;
+      animatedValue += increment;
+
+      if (currentStep >= steps) {
+        // Animation complete, set to exact target value
+        this.performanceMetrics[index].value = targetValue;
+        clearInterval(this.animationTimers[index]);
+        this.animationTimers[index] = null;
+      } else {
+        // Update with animated value (rounded)
+        this.performanceMetrics[index].value = Math.round(animatedValue);
+      }
+    }, stepTime);
+  }
+
+  refreshStats(): void {
+    console.log('🔄 Manually refreshing dashboard stats...');
+    this.loadDashboardStats();
+  }
+
+  mapDamageClass(className: string): 'puncture' | 'dent' | 'tear' | 'crush' {
+    const lowerClass = (className || '').toLowerCase();
+    if (lowerClass.includes('puncture') || lowerClass.includes('hole')) return 'puncture';
+    if (lowerClass.includes('dent') || lowerClass.includes('crush')) return 'dent';
+    if (lowerClass.includes('tear') || lowerClass.includes('rip')) return 'tear';
+    if (lowerClass.includes('crush') || lowerClass.includes('compress')) return 'crush';
+    return 'dent'; // default
+  }
+
+  formatTimestamp(timestamp: string): string {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins} min ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    } catch (e) {
+      return timestamp; // Fallback to raw timestamp if parsing fails
+    }
   }
 
   navigateToUpload(): void {
@@ -568,24 +688,6 @@ export class DashboardComponent implements OnInit {
 
   viewDetails(detectionId: string): void {
     this.router.navigate(['/package', detectionId.replace('#', '')]);
-  }
-
-  animateCounters(): void {
-    this.animateCounter(0, 1204, 50);
-    this.animateCounter(1, 87, 50);
-  }
-
-  animateCounter(index: number, targetValue: number, duration: number): void {
-    let currentValue = 0;
-    const increment = Math.ceil(targetValue / duration);
-    const timer = setInterval(() => {
-      currentValue += increment;
-      if (currentValue >= targetValue) {
-        currentValue = targetValue;
-        clearInterval(timer);
-      }
-      this.performanceMetrics[index].value = currentValue;
-    }, 30);
   }
 
   getIcon(iconName: string): string {

@@ -36,6 +36,10 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import List, Dict
 import bcrypt
+# Add these imports at the top if not already present
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
+import bcrypt
 
 # Load environment variables
 load_dotenv()
@@ -60,6 +64,39 @@ from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "admin",
+                "password": "admin123"
+            }
+        }
+class SignupRequest(BaseModel):
+    """Signup request model"""
+    username: str
+    password: str
+    full_name: str
+    email: EmailStr
+    role: Optional[str] = "inspector"
+
+class TokenResponse(BaseModel):
+    """Token response model"""
+    access_token: str
+    token_type: str
+    user: dict
+
+class UserResponse(BaseModel):
+    """User information response"""
+    username: str
+    full_name: str
+    email: str
+    role: str
+    is_active: bool
 # ============================================================================
 # APPLICATION LIFECYCLE
 # ============================================================================
@@ -73,7 +110,7 @@ async def lifespan(app: FastAPI):
     print(f"📅 UTC Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"👤 User: RakshaRajkumar14")
     print(f"🗄️  Database: IUProjectLocal")
-    print(f"☁️  S3 Bucket: {os.getenv('S3_BUCKET', 'Not configured')}")
+    print(f"☁️  S3 Bucket: {os.getenv('S3_BUCKET_NAME', 'Not configured')}")
     print(f"🌍 S3 Region: {os.getenv('AWS_REGION', 'Not configured')}")
     print("="*80 + "\n")
     
@@ -89,8 +126,8 @@ async def lifespan(app: FastAPI):
     print(f"✅ YOLO model loaded: {os.getenv('YOLO_WEIGHTS', 'models/best.pt')}")
     
     # Check S3
-    if os.getenv("S3_BUCKET"):
-        print(f"✅ S3 configured: {os.getenv('S3_BUCKET')}")
+    if os.getenv("S3_BUCKET_NAME"):
+        print(f"✅ S3 configured: {os.getenv('S3_BUCKET_NAME')}")
     else:
         print("⚠️  S3 not configured")
     
@@ -243,16 +280,17 @@ def draw_detections_on_image(img_array, predictions):
 
 # ============================================================================
 # AUTHENTICATION SETUP
-# ============================================================================
+# ===============================================-=============================
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password using bcrypt"""
+    """Verify password using bcrypt directly"""
     try:
         return bcrypt.checkpw(
             plain_password.encode('utf-8'), 
             hashed_password.encode('utf-8')
         )
-    except:
+    except Exception as e:
+        print(f"   ❌ Bcrypt error: {e}")
         return False
 
 def get_password_hash(password: str) -> str:
@@ -263,92 +301,86 @@ def get_password_hash(password: str) -> str:
 # AUTHENTICATION ENDPOINTS
 # ============================================================================
 
-@app.post("/api/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """
-    Admin login endpoint - OAuth2 compatible
-    
-    Default credentials:
-    - Username: admin
-    - Password: admin123
-    """
-    print(f"\n🔐 Login attempt for user: {form_data.username}")
-    
+# Find the login endpoint (around line 155-185) and update it:
+
+@app.post("/api/auth/login")
+async def login(credentials: LoginRequest):
+    """User login"""
     try:
-        # Get database pool
-        pool = await pg.init_pool()
+        print(f"\n🔐 Login attempt for: {credentials.username}")
         
-        # Query user from database
+        pool = await pg.init_pool()
         user = await pool.fetchrow(
             "SELECT * FROM users WHERE username = $1",
-            form_data.username
+            credentials.username
         )
         
         if not user:
-            print(f"   ❌ User not found: {form_data.username}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            print("   ❌ User not found")
+            raise HTTPException(status_code=401, detail="Invalid username or password")
         
         print(f"   ✅ User found: {user['username']}")
+        print(f"   Available fields: {list(user.keys())}")
+        
+        # Try different password field names
+        password_hash = (
+            user.get('hashed_password') or 
+            user.get('password') or 
+            user.get('password_hash')
+        )
+        
+        if not password_hash:
+            print("   ❌ No password field found!")
+            print(f"   User fields: {list(user.keys())}")
+            raise HTTPException(status_code=500, detail="User password not configured")
+        
+        print(f"   Password field found: {len(password_hash)} chars")
         
         # Verify password
-        if not verify_password(form_data.password, user['password_hash']):
-            print(f"   ❌ Invalid password")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        if not verify_password(credentials.password, password_hash):
+            print("   ❌ Password verification failed")
+            raise HTTPException(status_code=401, detail="Invalid username or password")
         
-        print(f"   ✅ Password verified")
+        print("   ✅ Password verified")
         
-        is_active = user.get('is_active', True)
-        # Check if user is active
-        if is_active is False:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user"
-            )
-        
-        # Create access token
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": user['username']}, 
-            expires_delta=access_token_expires
-        )
+        # Check if active
+        if not user.get('is_active', True):
+            raise HTTPException(status_code=403, detail="Account is inactive")
         
         # Update last login
-        await pool.execute(
-            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = $1",
-            form_data.username
+        try:
+            await pool.execute(
+                "UPDATE users SET last_login = NOW() WHERE user_id = $1",
+                user['user_id']
+            )
+        except Exception as e:
+            print(f"   ⚠️ Could not update last_login: {e}")
+        
+        # Create token
+        access_token = create_access_token(
+            data={"sub": user['username'], "user_id": user['user_id']}
         )
         
-        print(f"   ✅ Login successful for: {form_data.username}\n")
+        print("   ✅ Login successful!")
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
                 "username": user['username'],
-                "full_name": user['full_name'],
-                "email": user['email'],
-                "role": user['role']
+                "full_name": user.get('full_name', ''),
+                "email": user.get('email', ''),
+                "role": user.get('role', 'inspector')
             }
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"\n❌ Error in login: {e}")
+        print(f"\n❌ LOGIN ERROR: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
 
 @app.get("/api/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_active_user)):
@@ -388,14 +420,15 @@ async def detect(
     """
     
     print("\n" + "="*80)
-    print("🔍 NEW DETECTION REQUEST")
+    print(f"🚀 NEW DETECTION REQUEST - {datetime.utcnow().isoformat()}")
     print("="*80)
-    print(f"📅 UTC Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"👤 User: {current_user['username']}")
+    print(f"👤 User: {current_user.get('username', 'Unknown')} (ID: {current_user.get('user_id', 'N/A')})")
     print(f"📁 File: {file.filename}")
-    print("="*80 + "\n")
+    print(f"📏 Size: {file.size if hasattr(file, 'size') else 'Unknown'}")
+    print(f"🎨 Content-Type: {file.content_type}")
     
     if not file.content_type.startswith("image/"):
+        
         raise HTTPException(status_code=400, detail="File must be an image")
 
     # Read image
@@ -417,9 +450,9 @@ async def detect(
     orig_s3_url = None
     orig_s3_key = None
     
-    if os.getenv("S3_BUCKET"):
+    if os.getenv("S3_BUCKET_NAME"):
         try:
-            orig_s3_key = storage.generate_s3_key('originals', tracking_code, file.filename)
+            orig_s3_key = storage.generate_s3_key(os.getenv("S3_BUCKET_NAME"),'uploads',file.filename)
             orig_s3_url = storage.upload_bytes_to_s3(orig_s3_key, content, file.content_type)
             print(f"☁️  Original uploaded to S3: {orig_s3_key}")
         except Exception as e:
@@ -513,13 +546,13 @@ async def detect(
         crop_s3_url = None
         crop_s3_key = None
         
-        if os.getenv("S3_BUCKET"):
+        if os.getenv("S3_BUCKET_NAME"):
             try:
                 crop_img = img_array[y1:y2, x1:x2]
                 _, crop_buffer = cv2.imencode('.jpg', crop_img)
                 
                 crop_filename = f"{class_name}_{i+1}.jpg"
-                crop_s3_key = storage.generate_s3_key('crops', tracking_code, crop_filename)
+                crop_s3_key = storage.generate_s3_key(os.getenv("S3_BUCKET_NAME"), 'crops', f"{tracking_code}_{crop_filename}")
                 crop_s3_url = storage.upload_bytes_to_s3(
                     crop_s3_key, 
                     crop_buffer.tobytes(), 
@@ -580,10 +613,12 @@ async def detect(
     annotated_s3_url = None
     annotated_s3_key = None
     
-    if os.getenv("S3_BUCKET"):
+    if os.getenv("S3_BUCKET_NAME"):
         try:
             _, ann_buffer = cv2.imencode('.jpg', annotated)
-            annotated_s3_key = storage.generate_s3_key('annotated', tracking_code, 'annotated.jpg')
+            annotated_s3_key = storage.generate_s3_key(os.getenv("S3_BUCKET_NAME"),
+    'annotated',
+    f"{tracking_code}_annotated.jpg")
             annotated_s3_url = storage.upload_bytes_to_s3(
                 annotated_s3_key, 
                 ann_buffer.tobytes(), 
@@ -610,9 +645,11 @@ async def detect(
             gradcam_url = image_to_base64(gradcam_img)
             
             # Upload GradCAM to S3
-            if os.getenv("S3_BUCKET"):
+            if os.getenv("S3_BUCKET_NAME"):
                 _, grad_buffer = cv2.imencode('.jpg', gradcam_img)
-                gradcam_s3_key = storage.generate_s3_key('gradcam', tracking_code, 'gradcam.jpg')
+                gradcam_s3_key = storage.generate_s3_key( os.getenv("S3_BUCKET_NAME"),
+    'explainability',  # Use explainability folder
+    f"{tracking_code}_gradcam.jpg")
                 gradcam_s3_url = storage.upload_bytes_to_s3(
                     gradcam_s3_key, 
                     grad_buffer.tobytes(), 
@@ -625,9 +662,11 @@ async def detect(
             shap_url = image_to_base64(shap_img)
             
             # Upload SHAP to S3
-            if os.getenv("S3_BUCKET"):
+            if os.getenv("S3_BUCKET_NAME"):
                 _, shap_buffer = cv2.imencode('.jpg', shap_img)
-                shap_s3_key = storage.generate_s3_key('shap', tracking_code, 'shap.jpg')
+                shap_s3_key = storage.generate_s3_key( os.getenv("S3_BUCKET_NAME"),
+    'explainability',  # Use explainability folder
+    f"{tracking_code}_shap.jpg")
                 shap_s3_url = storage.upload_bytes_to_s3(
                     shap_s3_key, 
                     shap_buffer.tobytes(), 
@@ -765,11 +804,11 @@ def health_check():
         'status': 'healthy',
         'timestamp': datetime.utcnow().isoformat(),
         'database': 'connected' if os.getenv("POSTGRES_DSN") else 'not configured',
-        's3': 'configured' if os.getenv("S3_BUCKET") else 'not configured',
+        's3': 'configured' if os.getenv("S3_BUCKET_NAME") else 'not configured',
         'model': 'loaded',
         'user': 'RakshaRajkumar14',
         'database_name': 'IUProjectLocal',
-        's3_bucket': os.getenv("S3_BUCKET", "not configured"),
+        's3_bucket': os.getenv("S3_BUCKET_NAME", "not configured"),
         's3_region': os.getenv("AWS_REGION", "not configured"),
         'features': [
             'YOLO Detection',
