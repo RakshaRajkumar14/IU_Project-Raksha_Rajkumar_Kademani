@@ -71,7 +71,7 @@ async def insert_package(
         tracking_code, status, severity, damage_type, confidence, 
         timestamp, inspector_id, notes
     )
-    VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7, $8)
+    VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW() AT TIME ZONE 'UTC'), $7, $8)
     RETURNING package_id;
     """
     row = await pool.fetchrow(
@@ -248,6 +248,58 @@ async def insert_prediction(
         raise
     
 # ============================================================================
+# ANALYTICS OPERATIONS
+# ============================================================================
+
+async def get_analytics_data() -> Dict:
+    """Get comprehensive analytics data"""
+    pool = await init_pool()
+    
+    # Detection accuracy trend (last 7 days)
+    accuracy_trend = await pool.fetch("""
+        SELECT 
+            DATE(timestamp) as date,
+            AVG(confidence) * 100 as accuracy,
+            COUNT(*) as inspections
+        FROM packages 
+        WHERE timestamp >= CURRENT_DATE - INTERVAL '7 days'
+        GROUP BY DATE(timestamp)
+        ORDER BY date DESC
+    """)
+    
+    # Hourly detection statistics for today
+    hourly_stats = await pool.fetch("""
+        SELECT 
+            EXTRACT(HOUR FROM timestamp) as hour,
+            COUNT(*) as total,
+            COUNT(CASE WHEN status = 'damaged' THEN 1 END) as damaged
+        FROM packages 
+        WHERE DATE(timestamp) = CURRENT_DATE
+        GROUP BY EXTRACT(HOUR FROM timestamp)
+        ORDER BY hour
+    """)
+    
+    return {
+        'accuracy_trend': [
+            {
+                'date': row['date'].isoformat(),
+                'accuracy': round(row['accuracy'], 1) if row['accuracy'] else 0,
+                'inspections': row['inspections']
+            }
+            for row in accuracy_trend
+        ],
+        'hourly_stats': [
+            {
+                'hour': int(row['hour']),
+                'total': row['total'],
+                'damaged': row['damaged'],
+                'clean': row['total'] - row['damaged']
+            }
+            for row in hourly_stats
+        ]
+    }
+
+# ============================================================================
 # DASHBOARD STATISTICS
 # ============================================================================
 
@@ -261,28 +313,59 @@ async def get_dashboard_stats() -> Dict:
         WHERE DATE(timestamp) = CURRENT_DATE
     """) or 0
     
+    # Total inspections (all time)
+    total_inspections = await pool.fetchval("""
+        SELECT COUNT(*) FROM packages
+    """) or 0
+    
     # Damaged packages today
-    total_damages = await pool.fetchval("""
+    total_damages_today = await pool.fetchval("""
         SELECT COUNT(*) FROM packages 
         WHERE DATE(timestamp) = CURRENT_DATE AND status = 'damaged'
     """) or 0
     
-    # Most common damage
-    most_common = await pool.fetchrow("""
+    # Total damaged packages (all time)
+    total_damages = await pool.fetchval("""
+        SELECT COUNT(*) FROM packages 
+        WHERE status = 'damaged'
+    """) or 0
+    
+    # Damage types breakdown
+    damage_types = await pool.fetch("""
         SELECT damage_type, COUNT(*) as count 
         FROM packages 
         WHERE status = 'damaged' AND damage_type != 'None'
         GROUP BY damage_type 
-        ORDER BY count DESC 
-        LIMIT 1
+        ORDER BY count DESC
     """)
     
-    most_common_damage = most_common['damage_type'] if most_common else 'None'
+    damage_breakdown = {
+        'crushed': 0,
+        'torn': 0,
+        'dented': 0,
+        'wet': 0,
+        'other': 0
+    }
+    
+    for dt in damage_types:
+        damage_type = dt['damage_type'].lower()
+        if damage_type in damage_breakdown:
+            damage_breakdown[damage_type] = dt['count']
+        else:
+            damage_breakdown['other'] += dt['count']
+    
+    # Most common damage
+    most_common_damage = damage_types[0]['damage_type'] if damage_types else 'None'
+    
+    # Detection accuracy (based on confidence scores)
+    avg_confidence = await pool.fetchval("""
+        SELECT AVG(confidence) FROM packages WHERE confidence > 0
+    """) or 0
     
     # Damage rate
-    damage_rate = (total_damages / total_packages * 100) if total_packages > 0 else 0
+    damage_rate = (total_damages / total_inspections * 100) if total_inspections > 0 else 0
     
-    # Recent detections
+    # Recent detections - limit to 10 for dashboard
     recent = await pool.fetch("""
         SELECT 
             p.package_id,
@@ -291,12 +374,8 @@ async def get_dashboard_stats() -> Dict:
             p.severity,
             p.confidence,
             p.timestamp,
-            p.status,
-            (SELECT COUNT(*) FROM predictions pr 
-             JOIN inspection_images ii ON pr.image_id = ii.image_id 
-             WHERE ii.package_id = p.package_id) as prediction_count
+            p.status
         FROM packages p
-        WHERE p.status = 'damaged'
         ORDER BY p.timestamp DESC
         LIMIT 10
     """)
@@ -304,20 +383,23 @@ async def get_dashboard_stats() -> Dict:
     recent_detections = [
         {
             'id': r['tracking_code'],
-            'damageType': r['damage_type'],
-            'damageClass': r['severity'],
-            'timestamp': r['timestamp'].isoformat(),
-            'confidence': round(r['confidence'] * 100, 1),
-            'status': r['status'],
-            'predictionCount': r['prediction_count']
+            'damageType': r['damage_type'] if r['status'] == 'damaged' else 'No damage',
+            'damageClass': r['severity'] if r['status'] == 'damaged' else 'Clean',
+            'timestamp': r['timestamp'].isoformat() + 'Z',
+            'confidence': round(r['confidence'] * 100, 1) if r['confidence'] else 0,
+            'status': r['status']
         }
         for r in recent
     ]
     
     return {
         'total_packages_today': total_packages,
-        'total_damages_today': total_damages,
+        'total_inspections': total_inspections,
+        'total_damages_today': total_damages_today,
+        'total_damages': total_damages,
         'most_common_damage': most_common_damage,
         'damage_rate': round(damage_rate, 1),
+        'detection_accuracy': round(avg_confidence * 100, 1) if avg_confidence else 0,
+        'damage_breakdown': damage_breakdown,
         'recent_detections': recent_detections
     }

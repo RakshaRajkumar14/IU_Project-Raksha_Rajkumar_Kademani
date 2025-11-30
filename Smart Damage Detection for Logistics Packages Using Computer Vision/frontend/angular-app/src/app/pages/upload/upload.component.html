@@ -324,3 +324,37 @@ Date: 2025-11-16 14:41:18 UTC
     </div>
   </div>
 </div>
+
+<!-- Minimal AI Decision Modal -->
+<div class="modal-overlay" *ngIf="showExplainabilityModal" (click)="closeModal()">
+  <div class="ai-decision-card" (click)="$event.stopPropagation()">
+    <button class="close-btn" (click)="closeModal()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    
+    <div class="status-icon" [ngClass]="hasDetections ? 'reject' : 'accept'">
+      <svg *ngIf="!hasDetections" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      <svg *ngIf="hasDetections" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </div>
+    
+    <h2 class="decision-title" [ngClass]="hasDetections ? 'reject' : 'accept'">
+      {{ hasDetections ? 'CANNOT DELIVER' : 'READY TO DELIVER' }}
+    </h2>
+    
+    <p class="damage-info" *ngIf="hasDetections">
+      {{ detectionResult?.total_damages }} damage(s) detected
+    </p>
+    
+    <p class="decision-text">
+      {{ getAIDecisionText() }}
+    </p>
+  </div>
+</div>

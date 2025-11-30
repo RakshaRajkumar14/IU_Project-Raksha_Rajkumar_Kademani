@@ -1,5 +1,5 @@
 # ============================================================================
-# Package AI - Complete Requirements
+# LogiVision - Complete Requirements
 # Author: RakshaRajkumar14
 # Date: 2025-11-17 10:14:48 UTC
 # Python Version: 3.10+

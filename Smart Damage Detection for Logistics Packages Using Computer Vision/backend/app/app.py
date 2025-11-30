@@ -105,7 +105,7 @@ class UserResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Application startup and shutdown"""
     print("\n" + "="*80)
-    print("🚀 PACKAGE AI - STARTING UP")
+    print("🚀 LOGIVISION - STARTING UP")
     print("="*80)
     print(f"📅 UTC Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"👤 User: RakshaRajkumar14")
@@ -147,7 +147,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Package Damage Detection API",
-    description="AI-powered package damage detection with YOLO, GradCAM, and SHAP",
+    description="Package damage detection with YOLO, GradCAM, and SHAP",
     version="2.0.0",
     lifespan=lifespan
 )
@@ -467,14 +467,16 @@ async def detect(
     )
     print(f"✅ Found {len(preds)} detections")
 
-    # Determine status
+    # Determine status - only count actual damage detections
+    damage_preds = [p for p in preds if p['class_name'].lower() not in ['no_damage', 'none', 'normal', 'good', 'clean', 'undamaged']]
+    
     package_status = "passed"
     primary_severity = "secondary"
     primary_damage_type = "None"
     max_confidence = 0.0
     
-    if len(preds) > 0:
-        top_pred = max(preds, key=lambda p: p['score'])
+    if len(damage_preds) > 0:
+        top_pred = max(damage_preds, key=lambda p: p['score'])
         max_confidence = top_pred['score']
         primary_damage_type = top_pred['class_name']
         
@@ -483,7 +485,7 @@ async def detect(
         
         primary_severity, _, _ = get_severity_and_color(max_confidence)
 
-    all_damage_types = list(set(p['class_name'] for p in preds)) if preds else ["None"]
+    all_damage_types = list(set(p['class_name'] for p in damage_preds)) if damage_preds else ["None"]
     damage_type_str = ", ".join(all_damage_types)
 
     print(f"\n📊 Analysis:")
@@ -527,13 +529,13 @@ async def detect(
     else:
         print("\n⚠️  Skipping database save - POSTGRES_DSN not configured")
 
-    # STEP 5: Process predictions and upload crops
+    # STEP 5: Process predictions and upload crops - only process actual damages
     boxes_for_explainability = []
     processed_preds = []
     
     print("\n🎯 Processing predictions...")
     
-    for i, p in enumerate(preds):
+    for i, p in enumerate(damage_preds):
         x1, y1, x2, y2 = [int(v) for v in p['bbox']]
         score = p['score']
         class_name = p['class_name']
@@ -606,7 +608,23 @@ async def detect(
 
     # STEP 6: Generate annotated image
     print("\n🎨 Generating visualizations...")
-    annotated = draw_detections_on_image(img_array, processed_preds)
+    if len(damage_preds) > 0:
+        annotated = draw_detections_on_image(img_array, processed_preds)
+    else:
+        # For clean packages, draw a green verification box
+        annotated = img_array.copy()
+        h, w = annotated.shape[:2]
+        # Draw green border around entire image
+        cv2.rectangle(annotated, (10, 10), (w-10, h-10), (136, 255, 0), 8)
+        # Add "UNDAMAGED" text
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text = "UNDAMAGED"
+        (text_width, text_height), _ = cv2.getTextSize(text, font, 1.0, 2)
+        x = (w - text_width) // 2
+        y = text_height + 30
+        cv2.rectangle(annotated, (x-15, y-text_height-10), (x+text_width+15, y+8), (136, 255, 0), -1)
+        cv2.putText(annotated, text, (x, y), font, 1.0, (0, 0, 0), 2)
+    
     annotated_base64 = image_to_base64(annotated)
 
     # Upload annotated to S3
@@ -710,7 +728,7 @@ async def detect(
         'tracking_code': tracking_code,
         'status': package_status,
         'detections': processed_preds,
-        'total_damages': len(processed_preds),
+        'total_damages': len(damage_preds),
         'severity_counts': severity_counts,
         'annotated_image_url': annotated_base64,
         'original_s3_url': orig_s3_url,
@@ -737,9 +755,13 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_active_us
     if not os.getenv("POSTGRES_DSN"):
         return {
             'total_packages_today': 0,
+            'total_inspections': 0,
             'total_damages_today': 0,
+            'total_damages': 0,
             'most_common_damage': 'None',
             'damage_rate': 0,
+            'detection_accuracy': 0,
+            'damage_breakdown': {'crushed': 0, 'torn': 0, 'dented': 0, 'wet': 0, 'other': 0},
             'recent_detections': []
         }
     
@@ -751,11 +773,76 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_active_us
         print(f"❌ Dashboard stats error: {e}")
         return {
             'total_packages_today': 0,
+            'total_inspections': 0,
             'total_damages_today': 0,
+            'total_damages': 0,
             'most_common_damage': 'None',
             'damage_rate': 0,
+            'detection_accuracy': 0,
+            'damage_breakdown': {'crushed': 0, 'torn': 0, 'dented': 0, 'wet': 0, 'other': 0},
             'recent_detections': []
         }
+
+@app.get("/api/analytics")
+async def get_analytics_data(current_user: dict = Depends(get_current_active_user)):
+    """Get comprehensive analytics data"""
+    
+    if not os.getenv("POSTGRES_DSN"):
+        return {
+            'accuracy_trend': [],
+            'hourly_stats': []
+        }
+    
+    try:
+        analytics = await pg.get_analytics_data()
+        return analytics
+        
+    except Exception as e:
+        print(f"❌ Analytics error: {e}")
+        return {
+            'accuracy_trend': [],
+            'hourly_stats': []
+        }
+
+@app.get("/api/packages/all")
+async def get_all_packages(current_user: dict = Depends(get_current_active_user)):
+    """Get all packages for inspection queue"""
+    
+    if not os.getenv("POSTGRES_DSN"):
+        return {'packages': []}
+    
+    try:
+        pool = await pg.init_pool()
+        recent = await pool.fetch("""
+            SELECT 
+                p.package_id,
+                p.tracking_code,
+                p.damage_type,
+                p.severity,
+                p.confidence,
+                p.timestamp,
+                p.status
+            FROM packages p
+            ORDER BY p.timestamp DESC
+        """)
+        
+        packages = [
+            {
+                'id': r['tracking_code'],
+                'damageType': r['damage_type'] if r['status'] == 'damaged' else 'No damage',
+                'damageClass': r['severity'] if r['status'] == 'damaged' else 'Clean',
+                'timestamp': r['timestamp'].isoformat() + 'Z',
+                'confidence': round(r['confidence'] * 100, 1) if r['confidence'] else 0,
+                'status': r['status']
+            }
+            for r in recent
+        ]
+        
+        return {'packages': packages}
+        
+    except Exception as e:
+        print(f"❌ Failed to get all packages: {e}")
+        return {'packages': []}
 
 @app.get("/api/packages/{tracking_code}")
 async def get_package(
@@ -796,6 +883,45 @@ async def get_package(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/images/{s3_key:path}")
+async def serve_image(s3_key: str, token: str = None):
+    """Serve images from S3 with token authentication"""
+    try:
+        # Verify token
+        if token:
+            try:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                if username is None:
+                    raise HTTPException(status_code=401, detail="Invalid token")
+            except JWTError:
+                raise HTTPException(status_code=401, detail="Invalid token")
+        else:
+            raise HTTPException(status_code=401, detail="Token required")
+        
+        from services import storage
+        
+        # Download image from S3
+        bucket_name = os.getenv("S3_BUCKET_NAME")
+        if not bucket_name:
+            raise HTTPException(status_code=503, detail="S3 not configured")
+        
+        image_data = storage.download_from_s3(bucket_name, s3_key)
+        
+        # Determine content type
+        content_type = "image/jpeg"
+        if s3_key.lower().endswith('.png'):
+            content_type = "image/png"
+        elif s3_key.lower().endswith('.gif'):
+            content_type = "image/gif"
+        
+        from fastapi.responses import Response
+        return Response(content=image_data, media_type=content_type)
+        
+    except Exception as e:
+        print(f"❌ Failed to serve image {s3_key}: {e}")
+        raise HTTPException(status_code=404, detail="Image not found")
 
 @app.get("/api/health")
 def health_check():

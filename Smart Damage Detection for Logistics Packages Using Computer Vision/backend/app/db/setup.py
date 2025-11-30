@@ -25,7 +25,7 @@ class Colors:
 
 def print_header():
     print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*80}")
-    print("🚀 PACKAGE AI - COMPLETE DATABASE SETUP")
+    print("🚀 LogiVision- COMPLETE DATABASE SETUP")
     print(f"{'='*80}{Colors.END}")
     print(f"{Colors.BLUE}📅 Date: 2025-11-16 10:59:22 UTC")
     print(f"👤 User: RakshaRajkumar14")

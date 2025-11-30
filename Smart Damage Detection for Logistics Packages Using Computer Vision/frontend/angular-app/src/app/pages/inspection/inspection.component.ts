@@ -1,7 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { HttpClient, HttpClientModule, HttpHeaders } from '@angular/common/http';
+import { AuthService } from '../../services/auth.service';
 import { Dashboard3DBackgroundComponent } from '../dashboard/dashboard-3d-background.component';
 
 interface Package {
@@ -19,7 +21,7 @@ interface Package {
 @Component({
   selector: 'app-inspection-queue',
   standalone: true,
-  imports: [CommonModule, FormsModule, Dashboard3DBackgroundComponent],
+  imports: [CommonModule, FormsModule, HttpClientModule, Dashboard3DBackgroundComponent],
   template: `
     <!-- 3D AI Background -->
     <app-dashboard-3d-background></app-dashboard-3d-background>
@@ -28,7 +30,7 @@ interface Package {
     <div class="queue-page">
       <div class="page-header">
         <h1 class="gradient-text">Inspection Queue</h1>
-        <p class="subtitle">Real-time monitoring and management of AI-powered damage inspections</p>
+        <p class="subtitle">Real-time monitoring and management of damage inspections</p>
       </div>
 
       <!-- Filters Section with Glass Effect -->
@@ -59,7 +61,7 @@ interface Package {
           <h2>Recent Inspections</h2>
           <div class="stats">
             <span class="stat-item">
-              <span class="stat-label">Total:</span>
+              <span class="stat-label">Showing:</span>
               <span class="stat-value">{{ filteredPackages.length }}</span>
             </span>
           </div>
@@ -116,6 +118,35 @@ interface Package {
             </tbody>
           </table>
         </div>
+        
+        <!-- Pagination -->
+        <div class="pagination-wrapper">
+          <div class="pagination-info">
+            <span>Show</span>
+            <select [(ngModel)]="pageSize" (change)="onPageSizeChange()" class="page-size-select">
+              <option *ngFor="let size of pageSizeOptions" [value]="size">{{ size }}</option>
+            </select>
+            <span>entries</span>
+          </div>
+          
+          <div class="pagination-controls">
+            <button class="page-btn" [disabled]="currentPage === 1" (click)="goToPage(currentPage - 1)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+              Previous
+            </button>
+            
+            <span class="page-info">Page {{ currentPage }} of {{ totalPages }}</span>
+            
+            <button class="page-btn" [disabled]="currentPage === totalPages" (click)="goToPage(currentPage + 1)">
+              Next
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -141,13 +172,17 @@ interface Package {
           <!-- Package Image -->
           <div class="detail-section">
             <h3 class="section-title">Package Image</h3>
-            <div class="package-image-preview">
+            <div class="package-image-preview" *ngIf="!getImageUrl()">
               <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                 <circle cx="8.5" cy="8.5" r="1.5"/>
                 <polyline points="21 15 16 10 5 21"/>
               </svg>
-              <p>Image Preview</p>
+              <p>No image available</p>
+            </div>
+            <div class="actual-image-preview" *ngIf="getImageUrl()">
+              <img [src]="getImageUrl()" alt="Package Image" class="package-image" 
+                   (error)="onImageError($event)" (load)="onImageLoad($event)" />
             </div>
           </div>
 
@@ -235,12 +270,6 @@ interface Package {
           <button class="action-btn secondary" (click)="closeDetailsModal()">
             Close
           </button>
-          <button class="action-btn primary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-            Download Report
-          </button>
         </div>
       </div>
     </div>
@@ -283,7 +312,7 @@ interface Package {
     }
 
     .gradient-text {
-      font-size: 2.5rem;
+      font-size: 2.0rem;
       font-weight: 700;
       background: linear-gradient(135deg, #00ffff 0%, #00ff88 50%, #ffffff 100%);
       -webkit-background-clip: text;
@@ -791,6 +820,19 @@ interface Package {
       opacity: 0.5;
     }
 
+    .actual-image-preview {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(0, 255, 255, 0.3);
+    }
+
+    .package-image {
+      width: 100%;
+      max-height: 400px;
+      object-fit: contain;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
     /* Detail Grid */
     .detail-grid {
       display: grid;
@@ -1023,7 +1065,7 @@ interface Package {
       }
 
       .gradient-text {
-        font-size: 2rem;
+        font-size: 1.5rem;
       }
 
       .filters {
@@ -1070,85 +1112,302 @@ interface Package {
         justify-content: center;
       }
     }
+
+    /* Pagination Styles */
+    .pagination-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 2rem;
+      border-top: 1px solid rgba(0, 255, 255, 0.2);
+    }
+
+    .pagination-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.9rem;
+    }
+
+    .page-size-select {
+      padding: 0.4rem 0.8rem;
+      border: 1px solid rgba(0, 255, 255, 0.3);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    .page-size-select:focus {
+      outline: none;
+      border-color: #00ffff;
+    }
+
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .page-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1rem;
+      border: 1px solid rgba(0, 255, 255, 0.3);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #00ffff;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .page-btn:hover:not(:disabled) {
+      border-color: #00ffff;
+      background: rgba(0, 255, 255, 0.1);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .page-info {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    @media (max-width: 768px) {
+      .pagination-wrapper {
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem;
+      }
+    }
   `]
 })
-export class InspectionQueueComponent {
+export class InspectionQueueComponent implements OnInit, OnDestroy {
+  private apiUrl = 'http://localhost:8000/api';
+  private refreshInterval: any;
+  
   searchQuery = '';
   statusFilter = 'all';
   selectedPackage: Package | null = null;
+  packageDetails: any = null;
+  packages: Package[] = [];
+  isLoading = false;
+  
+  // Pagination
+  currentPage = 1;
+  pageSize = 15;
+  pageSizeOptions = [10, 15, 25, 50];
 
-  packages: Package[] = [
-    { 
-      id: 'PKG-2847', 
-      status: 'damaged', 
-      severity: 'danger', 
-      timestamp: '2024-01-15 14:32', 
-      confidence: 0.94, 
-      damageType: 'Dent',
-      inspector: 'AI System v2.1',
-      notes: 'Significant dent detected on left side of package. Requires manual inspection.'
-    },
-    { 
-      id: 'PKG-2846', 
-      status: 'passed', 
-      severity: 'success', 
-      timestamp: '2024-01-15 14:27', 
-      confidence: 0.98, 
-      damageType: 'None',
-      inspector: 'AI System v2.1',
-      notes: 'Package in excellent condition. Cleared for delivery.'
-    },
-    { 
-      id: 'PKG-2845', 
-      status: 'damaged', 
-      severity: 'warning', 
-      timestamp: '2024-01-15 14:24', 
-      confidence: 0.87, 
-      damageType: 'Scratch',
-      inspector: 'AI System v2.1',
-      notes: 'Minor surface scratch detected. Does not affect contents.'
-    },
-    { 
-      id: 'PKG-2844', 
-      status: 'passed', 
-      severity: 'success', 
-      timestamp: '2024-01-15 14:20', 
-      confidence: 0.96, 
-      damageType: 'None',
-      inspector: 'AI System v2.1',
-      notes: 'No damage detected. Package approved for shipment.'
-    },
-    { 
-      id: 'PKG-2843', 
-      status: 'damaged', 
-      severity: 'secondary', 
-      timestamp: '2024-01-15 14:17', 
-      confidence: 0.82, 
-      damageType: 'Surface mark',
-      inspector: 'AI System v2.1',
-      notes: 'Minor surface marking. Cosmetic damage only.'
+  constructor(
+    private router: Router,
+    private http: HttpClient,
+    private authService: AuthService
+  ) {}
+
+  ngOnInit(): void {
+    this.loadPackages();
+    this.refreshInterval = setInterval(() => {
+      this.loadPackages();
+    }, 30000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
     }
-  ];
+  }
 
-  constructor(private router: Router) {}
+  private loadPackages(): void {
+    const token = this.authService.getToken();
+    if (!token) {
+      this.loadMockData();
+      return;
+    }
+
+    const headers = new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
+
+    this.http.get<any>(`${this.apiUrl}/packages/all`, { headers }).subscribe({
+      next: (data) => {
+        if (data.packages && data.packages.length > 0) {
+          this.packages = data.packages.map((detection: any) => ({
+            id: detection.id,
+            status: detection.status,
+            severity: this.mapSeverity(detection.damageClass),
+            timestamp: this.formatTimestamp(detection.timestamp),
+            confidence: detection.confidence > 0 ? detection.confidence / 100 : 0.95,
+            damageType: detection.damageType,
+            inspector: 'AI System v2.1',
+            notes: this.generateNotes(detection)
+          }));
+        } else {
+          this.loadMockData();
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load packages:', err);
+        this.loadMockData();
+      }
+    });
+  }
+
+  private loadMockData(): void {
+    this.packages = [
+      { 
+        id: 'PKG-001', 
+        status: 'passed', 
+        severity: 'success', 
+        timestamp: '2 min ago', 
+        confidence: 0.98, 
+        damageType: 'None',
+        inspector: 'AI System v2.1',
+        notes: 'Package in excellent condition. Cleared for delivery.'
+      },
+      { 
+        id: 'PKG-002', 
+        status: 'damaged', 
+        severity: 'danger', 
+        timestamp: '15 min ago', 
+        confidence: 0.94, 
+        damageType: 'Dent',
+        inspector: 'AI System v2.1',
+        notes: 'Significant dent detected. Requires manual inspection.'
+      }
+    ];
+  }
+
+  private mapSeverity(damageClass: string): string {
+    if (!damageClass || damageClass === 'Clean') return 'success';
+    const severity = damageClass.toLowerCase();
+    if (severity.includes('severe') || severity.includes('major')) return 'danger';
+    if (severity.includes('moderate') || severity.includes('medium')) return 'warning';
+    return 'secondary';
+  }
+
+  private generateNotes(detection: any): string {
+    if (detection.status === 'passed') {
+      return 'Package in excellent condition. Cleared for delivery.';
+    }
+    return `${detection.damageType} detected with ${detection.confidence}% confidence. Requires attention.`;
+  }
+
+  private formatTimestamp(timestamp: string): string {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins} min ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+      
+      return date.toLocaleDateString();
+    } catch (e) {
+      return timestamp;
+    }
+  }
 
   get filteredPackages(): Package[] {
-    return this.packages.filter(pkg => {
+    const filtered = this.packages.filter(pkg => {
       const matchesSearch = pkg.id.toLowerCase().includes(this.searchQuery.toLowerCase());
       const matchesStatus = this.statusFilter === 'all' || pkg.status === this.statusFilter;
       return matchesSearch && matchesStatus;
     });
+    
+    // Apply pagination
+    const startIndex = (this.currentPage - 1) * this.pageSize;
+    const endIndex = startIndex + this.pageSize;
+    return filtered.slice(startIndex, endIndex);
+  }
+
+  get totalPages(): number {
+    const totalFiltered = this.packages.filter(pkg => {
+      const matchesSearch = pkg.id.toLowerCase().includes(this.searchQuery.toLowerCase());
+      const matchesStatus = this.statusFilter === 'all' || pkg.status === this.statusFilter;
+      return matchesSearch && matchesStatus;
+    }).length;
+    return Math.ceil(totalFiltered / this.pageSize) || 1;
+  }
+
+  onPageSizeChange(): void {
+    this.currentPage = 1; // Reset to first page when changing page size
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages) {
+      this.currentPage = page;
+    }
   }
 
   openDetailsModal(pkg: Package): void {
     this.selectedPackage = pkg;
-    // Prevent body scroll when modal is open
+    this.loadPackageDetails(pkg.id);
     document.body.style.overflow = 'hidden';
+  }
+
+  private loadPackageDetails(trackingCode: string): void {
+    const token = this.authService.getToken();
+    if (!token) {
+      this.packageDetails = null;
+      return;
+    }
+
+    const headers = new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
+
+    this.http.get<any>(`${this.apiUrl}/packages/${trackingCode}`, { headers }).subscribe({
+      next: (data) => {
+        this.packageDetails = data;
+        console.log('Package details loaded:', data);
+      },
+      error: (err) => {
+        console.error('Failed to load package details:', err);
+        this.packageDetails = null;
+      }
+    });
   }
 
   closeDetailsModal(): void {
     this.selectedPackage = null;
-    // Restore body scroll
+    this.packageDetails = null;
     document.body.style.overflow = 'auto';
+  }
+
+  getImageUrl(): string | null {
+    if (this.packageDetails?.images && this.packageDetails.images.length > 0) {
+      let imageUrl = this.packageDetails.images[0].original_image_url || 
+                     this.packageDetails.images[0].annotated_image_url;
+      
+      // Convert S3 path to HTTP URL via backend
+      if (imageUrl && imageUrl.startsWith('s3://')) {
+        const s3Key = imageUrl.replace('s3://damage-detection-images-s3/', '');
+        const token = this.authService.getToken();
+        return `${this.apiUrl}/images/${encodeURIComponent(s3Key)}?token=${token}`;
+      }
+      
+      return imageUrl;
+    }
+    
+    return null;
+  }
+
+  onImageError(event: any): void {
+    console.error('Image failed to load:', event);
+  }
+
+  onImageLoad(event: any): void {
+    console.log('Image loaded successfully:', event.target.src);
   }
 }

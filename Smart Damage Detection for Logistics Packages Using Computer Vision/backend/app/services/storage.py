@@ -178,6 +178,31 @@ def delete_from_s3(s3_key: str) -> bool:
         return False
 
 
+def download_from_s3(bucket_name: str, s3_key: str) -> bytes:
+    """
+    Download file from S3 and return as bytes
+    
+    Args:
+        bucket_name: S3 bucket name
+        s3_key: S3 object key
+    
+    Returns:
+        File data as bytes
+    """
+    s3 = boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    )
+    
+    try:
+        response = s3.get_object(Bucket=bucket_name, Key=s3_key)
+        return response['Body'].read()
+    except (BotoCoreError, ClientError) as e:
+        print(f"❌ Error downloading from S3: {e}")
+        raise
+
 def list_s3_objects(prefix: str = "", max_keys: int = 1000) -> list:
     """
     List objects in S3 bucket with optional prefix

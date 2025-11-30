@@ -1,16 +1,28 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClientModule } from '@angular/common/http';
 import { InspectionService } from '../../services/inspection.service';
 
 @Component({
   selector: 'app-inspections',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, HttpClientModule],
   template: `
     <div class="inspections">
       <div class="page-header">
-        <h1>Inspections</h1>
-        <p>Review and manage package damage detections</p>
+        <div>
+          <h1>Inspections</h1>
+          <p>Review and manage package damage detections</p>
+        </div>
+        <button class="refresh-btn" (click)="refreshData()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+            <path d="M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16"/>
+            <path d="M3 21v-5h5"/>
+          </svg>
+          Refresh
+        </button>
       </div>
 
       <div class="inspections-grid">
@@ -54,6 +66,9 @@ import { InspectionService } from '../../services/inspection.service';
     }
 
     .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
       margin-bottom: 2rem;
     }
 
@@ -63,6 +78,25 @@ import { InspectionService } from '../../services/inspection.service';
 
     .page-header p {
       color: var(--text-secondary);
+    }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #00ffff;
+      color: #0a0e27;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .refresh-btn:hover {
+      background: #00e6e6;
+      transform: translateY(-2px);
     }
 
     .inspections-grid {
@@ -177,4 +211,8 @@ import { InspectionService } from '../../services/inspection.service';
 })
 export class InspectionsComponent {
   inspectionService = inject(InspectionService);
+
+  refreshData(): void {
+    this.inspectionService.refreshInspections();
+  }
 }

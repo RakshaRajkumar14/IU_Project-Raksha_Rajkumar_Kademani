@@ -32,8 +32,8 @@ interface PerformanceMetric {
     <div class="dashboard-container">
       <!-- Header Section -->
       <div class="dashboard-header">
-        <h1 class="gradient-text">AI Dashboard</h1>
-        <p class="subtitle">Real-time package damage detection powered by computer vision</p>
+        <h1 class="gradient-text">Dashboard</h1>
+        <p class="subtitle">Real-time package damage detection</p>
       </div>
 
       <!-- Upload Section -->
@@ -46,7 +46,7 @@ interface PerformanceMetric {
             </svg>
           </div>
           <h2>Analyze a New Package</h2>
-          <p>Upload package images for AI-powered damage detection</p>
+          <p>Upload package images for damage detection</p>
           <button class="upload-button" (click)="navigateToUpload(); $event.stopPropagation()">
             <span>Upload Image</span>
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -253,7 +253,7 @@ interface PerformanceMetric {
     }
 
     .gradient-text {
-      font-size: 2.5rem;
+      font-size: 2.0rem;
       font-weight: 700;
       background: linear-gradient(135deg, #00ffff 0%, #00ff88 50%, #ffffff 100%);
       -webkit-background-clip: text;

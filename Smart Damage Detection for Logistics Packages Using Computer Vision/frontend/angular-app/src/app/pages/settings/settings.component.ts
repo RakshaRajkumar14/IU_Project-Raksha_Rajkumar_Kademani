@@ -202,7 +202,7 @@ import { Dashboard3DBackgroundComponent } from '../dashboard/dashboard-3d-backgr
     }
 
     .gradient-text {
-      font-size: 2.5rem;
+      font-size: 2.0rem;
       font-weight: 700;
       background: linear-gradient(135deg, #00ffff 0%, #00ff88 50%, #ffffff 100%);
       -webkit-background-clip: text;
@@ -532,7 +532,7 @@ import { Dashboard3DBackgroundComponent } from '../dashboard/dashboard-3d-backgr
       }
 
       .gradient-text {
-        font-size: 2rem;
+        font-size: 1.5rem;
       }
 
       .settings-card {

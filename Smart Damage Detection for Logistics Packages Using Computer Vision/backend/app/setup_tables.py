@@ -1,5 +1,5 @@
 """
-Setup database tables for Package AI
+Setup database tables for LogiVision
 """
 import asyncio
 import asyncpg

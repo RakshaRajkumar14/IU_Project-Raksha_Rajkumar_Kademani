@@ -1,5 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient, HttpClientModule, HttpHeaders } from '@angular/common/http';
+import { AuthService } from '../../services/auth.service';
 import { Dashboard3DBackgroundComponent } from '../dashboard/dashboard-3d-background.component';
 
 interface AnalyticMetric {
@@ -19,7 +21,7 @@ interface ChartData {
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [CommonModule, Dashboard3DBackgroundComponent],
+  imports: [CommonModule, HttpClientModule, Dashboard3DBackgroundComponent],
   template: `
     <!-- 3D AI Background -->
     <app-dashboard-3d-background></app-dashboard-3d-background>
@@ -27,7 +29,7 @@ interface ChartData {
     <!-- Analytics Content -->
     <div class="analytics-page">
       <div class="page-header">
-        <h1 class="gradient-text">AI Analytics Dashboard</h1>
+        <h1 class="gradient-text">Reports</h1>
         <p class="subtitle">Real-time insights and performance metrics</p>
       </div>
 
@@ -184,7 +186,7 @@ interface ChartData {
     }
 
     .gradient-text {
-      font-size: 2.5rem;
+      font-size: 2.0rem;
       font-weight: 700;
       background: linear-gradient(135deg, #00ffff 0%, #00ff88 50%, #ffffff 100%);
       -webkit-background-clip: text;
@@ -557,7 +559,7 @@ interface ChartData {
       }
 
       .gradient-text {
-        font-size: 2rem;
+        font-size: 1.5rem;
       }
 
       .metrics-section {
@@ -574,37 +576,168 @@ interface ChartData {
     }
   `]
 })
-export class ReportsComponent {
+export class ReportsComponent implements OnInit, OnDestroy {
+  private apiUrl = 'http://localhost:8000/api';
+  private refreshInterval: any;
+  stats: any = null;
+  
   keyMetrics: AnalyticMetric[] = [
-    { label: 'Total Inspections', value: '2,847', change: '+12.5%', trend: 'up', icon: 'scan' },
-    { label: 'Accuracy Rate', value: '96.4%', change: '+2.3%', trend: 'up', icon: 'target' },
-    { label: 'Damaged Packages', value: '142', change: '-8.1%', trend: 'down', icon: 'alert' },
-    { label: 'Processing Time', value: '1.2s', change: '-15.2%', trend: 'down', icon: 'clock' }
+    { label: 'Total Inspections', value: '0', change: '+12.5%', trend: 'up', icon: 'scan' },
+    { label: 'Detection Accuracy', value: '0%', change: '+2.3%', trend: 'up', icon: 'target' },
+    { label: 'Damaged Packages', value: '0', change: '-8.1%', trend: 'down', icon: 'alert' },
+    { label: 'Damage Rate', value: '0%', change: '-15.2%', trend: 'down', icon: 'clock' }
   ];
 
-  damageDistribution: ChartData[] = [
-    { label: 'Dent', value: 45, color: '#00ffff' },
-    { label: 'Scratch', value: 32, color: '#00ff88' },
-    { label: 'Tear', value: 28, color: '#64d2ff' },
-    { label: 'Wet', value: 22, color: '#bf5af2' },
-    { label: 'Crushed', value: 15, color: '#ff9f0a' }
-  ];
+  damageDistribution: ChartData[] = [];
+  detectionStats: any[] = [];
+  recentActivity: any[] = [];
 
-  detectionStats = [
-    { label: 'Passed', percentage: 85, count: 2421, color: '#00ff88' },
-    { label: 'Damaged', percentage: 12, count: 342, color: '#ff3b30' },
-    { label: 'Under Review', percentage: 3, count: 84, color: '#ff9f0a' }
-  ];
+  constructor(
+    private http: HttpClient,
+    private authService: AuthService
+  ) {}
 
-  recentActivity = [
-    { time: '2 minutes ago', title: 'High Accuracy Detection', description: '98.5% confidence on PKG-2847', color: '#00ff88' },
-    { time: '15 minutes ago', title: 'Batch Processing Complete', description: '150 packages processed successfully', color: '#00ffff' },
-    { time: '1 hour ago', title: 'Model Update', description: 'AI model retrained with new data', color: '#ff9f0a' },
-    { time: '3 hours ago', title: 'Quality Alert', description: 'Multiple damages detected in shipment #4521', color: '#ff3b30' }
-  ];
+  ngOnInit(): void {
+    this.loadReportsData();
+    this.refreshInterval = setInterval(() => {
+      this.loadReportsData();
+    }, 30000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+  }
+
+  private loadReportsData(): void {
+    const token = this.authService.getToken();
+    if (!token) {
+      this.loadMockData();
+      return;
+    }
+
+    const headers = new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
+
+    this.http.get<any>(`${this.apiUrl}/dashboard/stats`, { headers }).subscribe({
+      next: (data) => {
+        this.stats = data;
+        this.updateMetrics(data);
+        this.updateCharts(data);
+        this.updateActivity(data);
+      },
+      error: (err) => {
+        console.error('Failed to load reports data:', err);
+        this.loadMockData();
+      }
+    });
+  }
+
+  private updateMetrics(data: any): void {
+    this.keyMetrics[0].value = (data.total_inspections || 0).toString();
+    this.keyMetrics[1].value = `${data.detection_accuracy || 0}%`;
+    this.keyMetrics[2].value = (data.total_damages || 0).toString();
+    this.keyMetrics[3].value = `${data.damage_rate || 0}%`;
+  }
+
+  private updateCharts(data: any): void {
+    if (data.damage_breakdown) {
+      const colors = {
+        crushed: '#ff9f0a',
+        torn: '#64d2ff', 
+        dented: '#00ffff',
+        wet: '#bf5af2',
+        other: '#ff3b30'
+      };
+      
+      this.damageDistribution = Object.entries(data.damage_breakdown)
+        .filter(([_, count]: [string, any]) => count > 0)
+        .map(([type, count]: [string, any]) => ({
+          label: type.charAt(0).toUpperCase() + type.slice(1),
+          value: count,
+          color: colors[type as keyof typeof colors] || '#666'
+        }));
+    }
+
+    const totalInspections = data.total_inspections || 1;
+    const totalDamages = data.total_damages || 0;
+    const passedCount = totalInspections - totalDamages;
+    
+    this.detectionStats = [
+      { 
+        label: 'Passed', 
+        percentage: Math.round((passedCount / totalInspections) * 100), 
+        count: passedCount, 
+        color: '#00ff88' 
+      },
+      { 
+        label: 'Damaged', 
+        percentage: Math.round((totalDamages / totalInspections) * 100), 
+        count: totalDamages, 
+        color: '#ff3b30' 
+      }
+    ];
+  }
+
+  private updateActivity(data: any): void {
+    if (data.recent_detections && data.recent_detections.length > 0) {
+      this.recentActivity = data.recent_detections.slice(0, 4).map((detection: any) => ({
+        time: this.formatTimestamp(detection.timestamp),
+        title: detection.status === 'damaged' ? 'Damage Detected' : 'Package Cleared',
+        description: `${detection.damageType} - ${detection.id}`,
+        color: detection.status === 'damaged' ? '#ff3b30' : '#00ff88'
+      }));
+    } else {
+      this.recentActivity = [
+        { time: 'Just now', title: 'System Ready', description: 'Waiting for package inspections', color: '#00ffff' }
+      ];
+    }
+  }
+
+  private loadMockData(): void {
+    this.keyMetrics[0].value = '24';
+    this.keyMetrics[1].value = '94.2%';
+    this.keyMetrics[2].value = '3';
+    this.keyMetrics[3].value = '12.5%';
+    
+    this.damageDistribution = [
+      { label: 'Dent', value: 2, color: '#00ffff' },
+      { label: 'Tear', value: 1, color: '#64d2ff' }
+    ];
+    
+    this.detectionStats = [
+      { label: 'Passed', percentage: 87, count: 21, color: '#00ff88' },
+      { label: 'Damaged', percentage: 13, count: 3, color: '#ff3b30' }
+    ];
+    
+    this.recentActivity = [
+      { time: '2 min ago', title: 'Package Cleared', description: 'No damage - PKG-001', color: '#00ff88' },
+      { time: '15 min ago', title: 'Damage Detected', description: 'Dent - PKG-002', color: '#ff3b30' }
+    ];
+  }
+
+  private formatTimestamp(timestamp: string): string {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins} min ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+      
+      return date.toLocaleDateString();
+    } catch (e) {
+      return timestamp;
+    }
+  }
 
   get maxDamageValue(): number {
-    return Math.max(...this.damageDistribution.map(d => d.value));
+    return this.damageDistribution.length > 0 ? Math.max(...this.damageDistribution.map(d => d.value)) : 1;
   }
 
   getIconPath(icon: string): string {

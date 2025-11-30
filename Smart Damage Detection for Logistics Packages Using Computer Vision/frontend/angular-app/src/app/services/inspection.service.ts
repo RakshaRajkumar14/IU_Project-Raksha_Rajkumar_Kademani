@@ -1,43 +1,72 @@
 import { Injectable, signal } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Observable } from 'rxjs';
 import { Inspection } from '../models/inspection.model';
+import { AuthService } from './auth.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class InspectionService {
-  private inspectionsSignal = signal<Inspection[]>([
-    {
-      id: '1',
-      imageUrl: 'https://images.unsplash.com/photo-1566576721346-d4a3b4eaeb55?w=400',
-      damageType: 'Torn seal',
-      confidence: 92.5,
-      status: 'pending',
-      timestamp: new Date('2024-01-15T10:30:00'),
-      overlayType: 'none',
-    },
-    {
-      id: '2',
-      imageUrl: 'https://images.unsplash.com/photo-1566576721346-d4a3b4eaeb55?w=400',
-      damageType: 'Crushed corner',
-      confidence: 87.3,
-      status: 'approved',
-      timestamp: new Date('2024-01-15T09:15:00'),
-      reviewer: 'John Doe',
-      overlayType: 'none',
-    },
-    {
-      id: '3',
-      imageUrl: 'https://images.unsplash.com/photo-1566576721346-d4a3b4eaeb55?w=400',
-      damageType: 'Water damage',
-      confidence: 95.8,
-      status: 'flagged',
-      timestamp: new Date('2024-01-15T08:45:00'),
-      reviewer: 'Jane Smith',
-      overlayType: 'none',
-    },
-  ]);
+  private apiUrl = 'http://localhost:8000/api';
+  private inspectionsSignal = signal<Inspection[]>([]);
+  private refreshInterval: any;
 
   inspections = this.inspectionsSignal.asReadonly();
+
+  constructor(
+    private http: HttpClient,
+    private authService: AuthService
+  ) {
+    this.loadInspections();
+    // Auto-refresh every 30 seconds
+    this.refreshInterval = setInterval(() => {
+      this.loadInspections();
+    }, 30000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+  }
+
+  private loadInspections(): void {
+    const token = this.authService.getToken();
+    if (!token) {
+      console.warn('⚠️  No auth token found, skipping inspections load');
+      return;
+    }
+
+    const headers = new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
+
+    this.http.get<any>(`${this.apiUrl}/dashboard/stats`, { headers }).subscribe({
+      next: (stats) => {
+        const inspections: Inspection[] = stats.recent_detections.map((detection: any) => ({
+          id: detection.id,
+          imageUrl: '',
+          damageType: detection.damageType,
+          confidence: detection.confidence,
+          status: detection.status === 'damaged' ? 'pending' : 'approved',
+          timestamp: new Date(detection.timestamp),
+          overlayType: 'none' as const
+        }));
+        
+        this.inspectionsSignal.set(inspections);
+        console.log('✅ Inspections loaded:', inspections.length);
+      },
+      error: (err) => {
+        console.error('❌ Failed to load inspections:', err);
+      }
+    });
+  }
+
+  refreshInspections(): void {
+    console.log('🔄 Manually refreshing inspections...');
+    this.loadInspections();
+  }
 
   addInspection(inspection: Inspection) {
     this.inspectionsSignal.update(inspections => [inspection, ...inspections]);

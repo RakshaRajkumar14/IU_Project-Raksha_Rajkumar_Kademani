@@ -4,7 +4,6 @@ import { RouterOutlet, Router, NavigationEnd } from '@angular/router';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
 import { AuthService } from './services/auth.service';
 import { filter } from 'rxjs';
-
 @Component({
   selector: 'app-root',
   standalone: true,

@@ -45,14 +45,19 @@ import { AnyAaaaRecord } from 'node:dns';
             <div class="logo-container">
               <div class="logo-ring"></div>
               <div class="logo-ring ring-2"></div>
-              <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="9" cy="9" r="2"/>
-                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-              </svg>
+              <div class="logo-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                  <polyline points="7.5 4.21 12 6.81 16.5 4.21"/>
+                  <polyline points="7.5 19.79 7.5 14.6 3 12"/>
+                  <polyline points="21 12 16.5 14.6 16.5 19.79"/>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+              </div>
             </div>
-            <h1>Smart Damage Detection</h1>
-            <p class="tagline">AI-Powered Package Inspection System</p>
+            <h1>LogiVision AI</h1>
+            <p class="tagline">Smart Package Inspector</p>
           </div>
 
           <!-- Status Indicator -->
@@ -183,52 +188,7 @@ import { AnyAaaaRecord } from 'node:dns';
           </div>
         </div>
 
-        <!-- Side Info Panel -->
-        <div class="info-panel">
-          <div class="info-content">
-            <h2>Advanced AI Detection</h2>
-            <ul class="feature-list">
-              <li>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                <span>YOLOv8 Real-time Detection</span>
-              </li>
-              <li>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                <span>GradCAM Explainability</span>
-              </li>
-              <li>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                <span>SHAP Analysis</span>
-              </li>
-              <li>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                <span>Real-time Dashboard</span>
-              </li>
-            </ul>
-            <div class="stats-grid">
-              <div class="stat">
-                <div class="stat-value">98%</div>
-                <div class="stat-label">Accuracy</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value">&lt;2s</div>
-                <div class="stat-label">Speed</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value">24/7</div>
-                <div class="stat-label">Uptime</div>
-              </div>
-            </div>
-          </div>
-        </div>
+
       </div>
     </div>
   `,
@@ -240,22 +200,28 @@ import { AnyAaaaRecord } from 'node:dns';
     }
 
     .login-wrapper {
-      min-height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #0a0e1a;
-      position: relative;
+      background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
       overflow: hidden;
       padding: 20px;
     }
 
     /* Animated Particles */
     .particles-background {
-      position: absolute;
-      width: 100%;
-      height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       overflow: hidden;
+      z-index: 0;
     }
 
     .particle {
@@ -286,6 +252,8 @@ import { AnyAaaaRecord } from 'node:dns';
     /* Grid Overlay */
     .grid-overlay {
       position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
       height: 100%;
       background-image: 
@@ -293,6 +261,8 @@ import { AnyAaaaRecord } from 'node:dns';
         linear-gradient(90deg, rgba(0, 255, 255, 0.05) 1px, transparent 1px);
       background-size: 50px 50px;
       animation: gridMove 20s linear infinite;
+      z-index: 1;
+      pointer-events: none;
     }
 
     @keyframes gridMove {
@@ -304,10 +274,8 @@ import { AnyAaaaRecord } from 'node:dns';
     .login-container {
       position: relative;
       z-index: 10;
-      display: grid;
-      grid-template-columns: 480px 350px;
-      gap: 0;
-      max-width: 830px;
+      width: 100%;
+      max-width: 420px;
       margin: 0 auto;
     }
 
@@ -316,10 +284,11 @@ import { AnyAaaaRecord } from 'node:dns';
       background: rgba(15, 20, 35, 0.95);
       backdrop-filter: blur(20px);
       border: 1px solid rgba(0, 255, 255, 0.2);
-      border-radius: 24px 0 0 24px;
-      padding: 48px 40px;
+      border-radius: 16px;
+      padding: 24px 28px;
       position: relative;
       overflow: hidden;
+      width: 100%;
     }
 
     .card-glow {
@@ -341,13 +310,13 @@ import { AnyAaaaRecord } from 'node:dns';
     .header-section {
       position: relative;
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 20px;
     }
 
     .logo-container {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 20px;
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 12px;
       position: relative;
       display: flex;
       align-items: center;
@@ -381,17 +350,39 @@ import { AnyAaaaRecord } from 'node:dns';
     .logo-icon {
       position: relative;
       z-index: 2;
-      color: #00ffff;
-      filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.5));
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #00ffff 0%, #00ff88 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(0, 255, 255, 0.4);
+      animation: logoGlow 3s ease-in-out infinite alternate;
+    }
+
+    .logo-icon svg {
+      color: #0a1929;
+      width: 28px;
+      height: 28px;
+    }
+
+    @keyframes logoGlow {
+      from {
+        box-shadow: 0 4px 20px rgba(0, 255, 255, 0.4);
+      }
+      to {
+        box-shadow: 0 6px 30px rgba(0, 255, 255, 0.6);
+      }
     }
 
     h1 {
-      font-size: 26px;
+      font-size: 22px;
       font-weight: 700;
       background: linear-gradient(135deg, #00ffff, #00ff88);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .tagline {
@@ -455,8 +446,8 @@ import { AnyAaaaRecord } from 'node:dns';
       position: relative;
       display: flex;
       flex-direction: column;
-      gap: 20px;
-      margin-bottom: 24px;
+      gap: 16px;
+      margin-bottom: 20px;
     }
 
     .input-group {
@@ -600,7 +591,7 @@ import { AnyAaaaRecord } from 'node:dns';
     .divider {
       display: flex;
       align-items: center;
-      margin: 24px 0 20px;
+      margin: 20px 0 16px;
       color: rgba(255, 255, 255, 0.4);
       font-size: 12px;
       text-transform: uppercase;
@@ -623,9 +614,9 @@ import { AnyAaaaRecord } from 'node:dns';
     .demo-box {
       background: rgba(0, 255, 255, 0.05);
       border: 1px solid rgba(0, 255, 255, 0.2);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 24px;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
     }
 
     .demo-header {
@@ -786,16 +777,7 @@ import { AnyAaaaRecord } from 'node:dns';
     /* Responsive */
     @media (max-width: 968px) {
       .login-container {
-        grid-template-columns: 1fr;
         max-width: 480px;
-      }
-
-      .login-card {
-        border-radius: 24px;
-      }
-
-      .info-panel {
-        display: none;
       }
     }
 

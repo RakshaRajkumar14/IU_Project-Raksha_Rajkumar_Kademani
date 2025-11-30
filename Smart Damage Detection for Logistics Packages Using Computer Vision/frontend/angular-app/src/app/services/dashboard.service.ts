@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 export interface DashboardStats {
   total_packages_today: number;
   total_damages_today: number;
+  total_damages: number;
   most_common_damage: string;
   damage_rate: number;
   recent_detections: Array<{

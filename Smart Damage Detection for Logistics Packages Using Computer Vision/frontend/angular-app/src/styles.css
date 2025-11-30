@@ -4,10 +4,33 @@
   box-sizing: border-box;
 }
 
+html {
+  background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
+  min-height: 100vh;
+}
+
 body {
   font-family: 'Segoe UI', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #f8f9fa;
-  color: #1e293b;
+  background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
+  color: #ffffff;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+app-root {
+  display: block;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
+}
+
+#root {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
+}
+
+.app-container {
+  background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%) !important;
 }
 
 ::-webkit-scrollbar {

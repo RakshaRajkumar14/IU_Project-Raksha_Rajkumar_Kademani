@@ -52,9 +52,11 @@ export class AuthService {
     }).pipe(
       tap(response => {
         console.log('✅ Login successful');
-        localStorage.setItem('auth_token', response.access_token);
-        localStorage.setItem('current_user', JSON.stringify(response.user));
-           this.currentUserSubject.next(response.user);
+        if (this.isBrowser) {
+          localStorage.setItem('auth_token', response.access_token);
+          localStorage.setItem('current_user', JSON.stringify(response.user));
+        }
+        this.currentUserSubject.next(response.user);
       }),
       catchError((error: HttpErrorResponse) => {
         console.error('❌ Login failed:', error);
@@ -64,22 +66,27 @@ export class AuthService {
   }
 
   logout(): void {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('current_user');
-       this.currentUserSubject.next(null);
+    if (this.isBrowser) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('current_user');
+    }
+    this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
   }
 
   getToken(): string | null {
+    if (!this.isBrowser) return null;
     return localStorage.getItem('auth_token');
   }
 
   getCurrentUser(): any {
+    if (!this.isBrowser) return null;
     const userStr = localStorage.getItem('current_user');
     return userStr ? JSON.parse(userStr) : null;
   }
 
   isLoggedIn(): boolean {
+    if (!this.isBrowser) return false;
     return !!this.getToken();
   }
 }
